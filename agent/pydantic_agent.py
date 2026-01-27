@@ -68,7 +68,7 @@ class LayoutAgentDeps:
 # ============== Agent 工厂函数 ==============
 
 def create_layout_agent(
-    model_name: str = "deepseek-chat",
+    model_name: str = "deepseek-reasoner",
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     use_skills: bool = True
