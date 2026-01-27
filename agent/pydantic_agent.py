@@ -4,6 +4,10 @@ PydanticAI Agent 集成模块
 使用 PydanticAI 框架构建 Layout Agent，通过 LLM 实现智能指令解析和工具调用。
 统一通过 MCP Server 的 call_tool() 作为单一工具调用入口（Single Source of Truth）。
 
+支持两种工具调用模式：
+1. Skills 模式（推荐）：使用 PydanticAI Skills 实现渐进式披露，按需加载技能
+2. 传统模式：直接注册所有工具到 Agent
+
 迁移自 OpenAI Agent SDK 实现，保持相同的功能和接口。
 """
 
@@ -11,11 +15,12 @@ import sys
 import json
 import os
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 # 添加路径
 _BASE_PATH = Path(__file__).parent.parent
@@ -65,17 +70,19 @@ class LayoutAgentDeps:
 def create_layout_agent(
     model_name: str = "deepseek-chat",
     api_key: Optional[str] = None,
-    base_url: Optional[str] = None
-) -> Agent[LayoutAgentDeps, str]:
+    base_url: Optional[str] = None,
+    use_skills: bool = True
+) -> Tuple[Agent[LayoutAgentDeps, str], Optional[Any]]:
     """创建 Layout Agent 实例
     
     Args:
         model_name: 模型名称 (如 deepseek-chat, deepseek-reasoner, gpt-4o)
         api_key: API 密钥，默认从环境变量读取
         base_url: API Base URL，默认从环境变量读取
+        use_skills: 是否使用 Skills 模式（推荐 True，支持渐进式披露减少Token消耗）
         
     Returns:
-        配置好的 Agent 实例
+        Tuple: (配置好的 Agent 实例, SkillsToolset 或 None)
     """
     # 获取 API 配置（优先级：参数 > 环境变量 > 默认值）
     if api_key is None:
@@ -84,20 +91,50 @@ def create_layout_agent(
     if base_url is None:
         base_url = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
     
-    # 创建 OpenAI 兼容模型
-    model = OpenAIModel(
-        model_name,
-        api_key=api_key,
-        base_url=base_url
-    )
+    # 创建 OpenAI 兼容的 Provider 和 Model
+    provider = OpenAIProvider(base_url=base_url, api_key=api_key)
+    model = OpenAIChatModel(model_name, provider=provider)
     
-    # 创建 Agent
+    skills_toolset = None
+    
+    if use_skills:
+        # Skills 模式：使用 PydanticAI Skills 实现渐进式披露
+        try:
+            from ..skills import create_layout_skills_toolset
+            
+            skills_toolset = create_layout_skills_toolset()
+            
+            # 创建 Agent，使用 SkillsToolset
+            layout_agent = Agent(
+                model,
+                deps_type=LayoutAgentDeps,
+                output_type=str,
+                system_prompt=SYSTEM_PROMPT,
+                retries=2,
+                toolsets=[skills_toolset]
+            )
+            
+            # 添加技能指令到系统提示（渐进式披露的核心）
+            @layout_agent.instructions
+            async def add_skills_instructions(ctx: RunContext[LayoutAgentDeps]) -> str | None:
+                """动态添加技能列表到系统提示，实现渐进式披露"""
+                return await skills_toolset.get_instructions(ctx)
+            
+            return layout_agent, skills_toolset
+            
+        except ImportError as e:
+            # Skills 模块导入失败，回退到传统模式
+            import warnings
+            warnings.warn(f"Skills 模块导入失败: {e}，回退到传统模式")
+            use_skills = False
+    
+    # 传统模式：直接注册所有工具
     layout_agent = Agent(
         model,
         deps_type=LayoutAgentDeps,
         output_type=str,
         system_prompt=SYSTEM_PROMPT,
-        retries=2,  # 工具调用失败时的重试次数
+        retries=2,
     )
     
     # 注册所有工具
@@ -109,7 +146,7 @@ def create_layout_agent(
     _register_query_tools(layout_agent)
     _register_export_tools(layout_agent)
     
-    return layout_agent
+    return layout_agent, None
 
 
 # ============== 器件工具 ==============
@@ -636,7 +673,8 @@ async def run_layout_agent(
     design_name: str = "top_level",
     model: str = "deepseek-chat",
     api_key: Optional[str] = None,
-    base_url: Optional[str] = None
+    base_url: Optional[str] = None,
+    use_skills: bool = True
 ) -> Dict[str, Any]:
     """运行 Layout Agent 处理用户指令
     
@@ -647,6 +685,7 @@ async def run_layout_agent(
         model: 模型名称（如 deepseek-chat, deepseek-reasoner）
         api_key: API密钥，默认从环境变量读取
         base_url: API Base URL，默认从环境变量读取
+        use_skills: 是否使用 Skills 模式（推荐 True，实现渐进式披露减少Token）
         
     Returns:
         处理结果字典，包含:
@@ -654,12 +693,14 @@ async def run_layout_agent(
         - context_summary: 上下文摘要
         - components: 组件列表
         - usage: Token 使用信息
+        - mode: 使用的模式 ("skills" 或 "traditional")
     """
     # 创建 Agent
-    agent = create_layout_agent(
+    agent, skills_toolset = create_layout_agent(
         model_name=model,
         api_key=api_key,
-        base_url=base_url
+        base_url=base_url,
+        use_skills=use_skills
     )
     
     # 初始化 MCP Server 和依赖
@@ -695,7 +736,8 @@ async def run_layout_agent(
         "response": result.output,
         "context_summary": layout_ctx.summary() if layout_ctx else {},
         "components": layout_ctx.list_components() if layout_ctx else [],
-        "usage": usage_info
+        "usage": usage_info,
+        "mode": "skills" if skills_toolset is not None else "traditional"
     }
 
 
@@ -705,7 +747,8 @@ def run_layout_agent_sync(
     design_name: str = "top_level",
     model: str = "deepseek-chat",
     api_key: Optional[str] = None,
-    base_url: Optional[str] = None
+    base_url: Optional[str] = None,
+    use_skills: bool = True
 ) -> Dict[str, Any]:
     """同步运行 Layout Agent（便捷方法）
     
@@ -718,7 +761,8 @@ def run_layout_agent_sync(
         design_name=design_name,
         model=model,
         api_key=api_key,
-        base_url=base_url
+        base_url=base_url,
+        use_skills=use_skills
     ))
 
 
@@ -729,7 +773,8 @@ async def run_layout_agent_stream(
     model: str = "deepseek-reasoner",
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
-    on_text: Optional[callable] = None
+    on_text: Optional[callable] = None,
+    use_skills: bool = True
 ) -> Dict[str, Any]:
     """流式运行 Layout Agent
     
@@ -741,15 +786,17 @@ async def run_layout_agent_stream(
         api_key: API密钥
         base_url: API Base URL
         on_text: 文本回调函数，每次收到新文本时调用
+        use_skills: 是否使用 Skills 模式
         
     Returns:
         完整的处理结果
     """
     # 创建 Agent
-    agent = create_layout_agent(
+    agent, skills_toolset = create_layout_agent(
         model_name=model,
         api_key=api_key,
-        base_url=base_url
+        base_url=base_url,
+        use_skills=use_skills
     )
     
     # 初始化 MCP Server 和依赖
@@ -779,6 +826,7 @@ async def run_layout_agent_stream(
         "response": full_response,
         "context_summary": layout_ctx.summary() if layout_ctx else {},
         "components": layout_ctx.list_components() if layout_ctx else [],
+        "mode": "skills" if skills_toolset is not None else "traditional"
     }
 
 
