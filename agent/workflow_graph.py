@@ -10,7 +10,7 @@ import logging
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING, Any
+from typing import Optional, TYPE_CHECKING, Any, Dict, List
 
 # Try to import pydantic-graph
 # 尝试导入 pydantic-graph 库

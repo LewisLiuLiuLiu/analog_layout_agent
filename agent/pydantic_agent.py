@@ -16,7 +16,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
