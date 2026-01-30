@@ -9,13 +9,16 @@ All outputs use PydanticAI structured output for type safety.
 """
 
 import os
+import json
+import re
 import logging
 from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel, Field
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +87,33 @@ Each step must contain:
 - category: Step type (device-creation, placement-layout, routing-connection, verification-drc, export-query)
 - description: Human-readable step description
 - tool: Tool name to use
-- parameters: Tool parameters as object
-- expected_output: Expected output for verification
-- verification: Verification configuration with type and conditions
-- depends_on: List of step_ids this step depends on
+- parameters: Tool parameters as object (e.g., {"width": 1.0, "length": 0.15})
+- expected_output: Expected output as object (e.g., {"component_name": "nmos_1", "success": true}), NOT a string
+- verification: Verification config with "type" and "conditions" (conditions MUST be a list, e.g., {"type": "component_exists", "conditions": [{"field": "name", "value": "nmos_1"}]})
+- depends_on: List of step_ids this step depends on (e.g., [1, 2])
 - routing_justification: (Only for routing steps) Explain metal layer choice
+
+## JSON Format Example
+
+```json
+{
+  "design_name": "simple_ota",
+  "pdk": "sky130",
+  "steps": [
+    {
+      "step_id": 1,
+      "category": "device-creation",
+      "description": "Create PMOS current mirror",
+      "tool": "create_pmos",
+      "parameters": {"width": 1.0, "length": 0.15, "fingers": 2},
+      "expected_output": {"component_name": "pmos_1", "device_type": "pmos"},
+      "verification": {"type": "component_exists", "conditions": [{"field": "name", "value": "pmos_1"}]},
+      "depends_on": [],
+      "max_retries": 3
+    }
+  ]
+}
+```
 
 ## Available Tools by Category
 
@@ -189,33 +214,48 @@ class ReasoningAgent:
             base_url: API base URL
             model_name: Model name to use
         """
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
-            raise ValueError("DEEPSEEK_API_KEY not set")
+            raise ValueError("DEEPSEEK_API_KEY or OPENAI_API_KEY not set")
         
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
         self.model_name = model_name
         
-        # Configure model
-        self.model = OpenAIModel(
-            model_name,
-            base_url=base_url,
-            api_key=self.api_key
-        )
+        # Configure model using OpenAIProvider (compatible with DeepSeek API)
+        provider = OpenAIProvider(base_url=self.base_url, api_key=self.api_key)
+        self.model = OpenAIChatModel(model_name, provider=provider)
         
-        # Create planning agent with structured output
-        self.planning_agent = Agent(
-            self.model,
-            output_type=WorkflowPlanOutput,
-            system_prompt=PLANNING_PROMPT
-        )
+        # Check if model supports structured output (tool_choice)
+        # deepseek-reasoner does NOT support tool_choice, need to parse JSON manually
+        self.use_structured_output = "reasoner" not in model_name.lower()
         
-        # Create failure analysis agent with structured output
-        self.analysis_agent = Agent(
-            self.model,
-            output_type=FailureAnalysisOutput,
-            system_prompt=FAILURE_ANALYSIS_PROMPT
-        )
+        if self.use_structured_output:
+            # Create planning agent with structured output
+            self.planning_agent = Agent(
+                self.model,
+                output_type=WorkflowPlanOutput,
+                system_prompt=PLANNING_PROMPT
+            )
+            
+            # Create failure analysis agent with structured output
+            self.analysis_agent = Agent(
+                self.model,
+                output_type=FailureAnalysisOutput,
+                system_prompt=FAILURE_ANALYSIS_PROMPT
+            )
+        else:
+            # For reasoner models: use plain text output, parse JSON manually
+            self.planning_agent = Agent(
+                self.model,
+                output_type=str,
+                system_prompt=PLANNING_PROMPT + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown code blocks, no extra text."
+            )
+            
+            self.analysis_agent = Agent(
+                self.model,
+                output_type=str,
+                system_prompt=FAILURE_ANALYSIS_PROMPT + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown code blocks, no extra text."
+            )
         
         logger.info(f"ReasoningAgent initialized with model: {model_name}")
     
@@ -255,7 +295,12 @@ Remember: Every routing step MUST have a 'layer' parameter specified.
         
         # Run planning agent
         result = await self.planning_agent.run(user_prompt)
-        plan = result.data
+        
+        if self.use_structured_output:
+            plan = result.output
+        else:
+            # Parse JSON from text output (for reasoner models)
+            plan = self._parse_workflow_json(result.output)
         
         # Validate the plan
         self._validate_plan(plan)
@@ -302,7 +347,12 @@ Please analyze the failure and provide a fix if possible.
 """
         
         result = await self.analysis_agent.run(user_prompt)
-        analysis = result.data
+        
+        if self.use_structured_output:
+            analysis = result.output
+        else:
+            # Parse JSON from text output (for reasoner models)
+            analysis = self._parse_analysis_json(result.output)
         
         if analysis.recoverable:
             logger.info(f"Failure is recoverable: {analysis.analysis[:100]}...")
@@ -310,6 +360,59 @@ Please analyze the failure and provide a fix if possible.
             logger.warning(f"Failure is NOT recoverable: {analysis.recommendation}")
         
         return analysis
+    
+    def _parse_workflow_json(self, text: str) -> WorkflowPlanOutput:
+        """
+        Parse workflow JSON from plain text output (for reasoner models).
+        
+        Handles various formats:
+        - Pure JSON
+        - JSON wrapped in markdown code blocks
+        - JSON with extra text before/after
+        """
+        # Try to extract JSON from markdown code blocks first
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+        if json_match:
+            json_str = json_match.group(1).strip()
+        else:
+            # Try to find JSON object directly
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                raise ValueError(f"Could not find JSON in response: {text[:200]}...")
+        
+        try:
+            data = json.loads(json_str)
+            return WorkflowPlanOutput(**data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in response: {e}\nText: {json_str[:500]}...")
+        except Exception as e:
+            raise ValueError(f"Failed to parse workflow plan: {e}")
+    
+    def _parse_analysis_json(self, text: str) -> FailureAnalysisOutput:
+        """
+        Parse failure analysis JSON from plain text output (for reasoner models).
+        """
+        # Try to extract JSON from markdown code blocks first
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+        if json_match:
+            json_str = json_match.group(1).strip()
+        else:
+            # Try to find JSON object directly
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                raise ValueError(f"Could not find JSON in response: {text[:200]}...")
+        
+        try:
+            data = json.loads(json_str)
+            return FailureAnalysisOutput(**data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in response: {e}\nText: {json_str[:500]}...")
+        except Exception as e:
+            raise ValueError(f"Failed to parse failure analysis: {e}")
     
     def _format_skills(self, skills: list[dict]) -> str:
         """Format skills list for prompt"""

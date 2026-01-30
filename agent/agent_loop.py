@@ -50,6 +50,7 @@ class AgentLoop:
         designs_dir: Path,
         reasoning_api_key: Optional[str] = None,
         reasoning_base_url: str = "https://api.deepseek.com",
+        reasoning_model: str = "deepseek-reasoner",
         drc_strategy: DRCStrategy = DRCStrategy.CRITICAL_STEPS,
         max_iterations: int = 10
     ):
@@ -61,6 +62,7 @@ class AgentLoop:
             designs_dir: Base directory for designs
             reasoning_api_key: API key for Reasoning Agent
             reasoning_base_url: API base URL
+            reasoning_model: Model name for Reasoning Agent (e.g., 'deepseek-reasoner', 'deepseek-chat')
             drc_strategy: DRC verification strategy
             max_iterations: Maximum iterations to prevent loops
         """
@@ -73,9 +75,10 @@ class AgentLoop:
         try:
             self.reasoning_agent = ReasoningAgent(
                 api_key=reasoning_api_key,
-                base_url=reasoning_base_url
+                base_url=reasoning_base_url,
+                model_name=reasoning_model
             )
-            logger.info("Reasoning Agent initialized")
+            logger.info(f"Reasoning Agent initialized with model: {reasoning_model}")
         except Exception as e:
             logger.warning(f"Could not initialize Reasoning Agent: {e}")
             self.reasoning_agent = None
@@ -426,7 +429,8 @@ async def run_layout_agent_loop(
     pdk: str = "sky130",
     design_name: Optional[str] = None,
     mcp_server = None,
-    designs_dir: Optional[Path] = None
+    designs_dir: Optional[Path] = None,
+    reasoning_model: str = "deepseek-reasoner"
 ) -> dict:
     """
     Run the Layout Agent Loop.
@@ -439,6 +443,7 @@ async def run_layout_agent_loop(
         design_name: Optional design name
         mcp_server: MCP server instance (created if not provided)
         designs_dir: Base directory for designs
+        reasoning_model: Model for Reasoning Agent ('deepseek-reasoner' or 'deepseek-chat')
         
     Returns:
         dict: Execution result with success status and summary
@@ -456,7 +461,8 @@ async def run_layout_agent_loop(
     # Create and run agent loop
     loop = AgentLoop(
         mcp_server=mcp_server,
-        designs_dir=designs_dir
+        designs_dir=designs_dir,
+        reasoning_model=reasoning_model
     )
     
     return await loop.run(
@@ -471,15 +477,20 @@ def run_layout_agent_loop_sync(
     pdk: str = "sky130",
     design_name: Optional[str] = None,
     mcp_server = None,
-    designs_dir: Optional[Path] = None
+    designs_dir: Optional[Path] = None,
+    reasoning_model: str = "deepseek-reasoner"
 ) -> dict:
     """
     Synchronous wrapper for run_layout_agent_loop.
+    
+    Args:
+        reasoning_model: Model for Reasoning Agent ('deepseek-reasoner' or 'deepseek-chat')
     """
     return asyncio.run(run_layout_agent_loop(
         instruction=instruction,
         pdk=pdk,
         design_name=design_name,
         mcp_server=mcp_server,
-        designs_dir=designs_dir
+        designs_dir=designs_dir,
+        reasoning_model=reasoning_model
     ))
