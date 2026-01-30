@@ -449,8 +449,9 @@ async def run_layout_agent_loop(
     
     # Create MCP server if not provided
     if mcp_server is None:
-        from ..mcp_server.server import create_mcp_server
-        mcp_server = create_mcp_server(pdk=pdk)
+        from ..mcp_server.server import MCPServer
+        mcp_server = MCPServer()
+        mcp_server.initialize(pdk_name=pdk)
     
     # Create and run agent loop
     loop = AgentLoop(
