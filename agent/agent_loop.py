@@ -377,11 +377,14 @@ echo "      progress.md: exists"
 
 # 4. Validate JSON
 echo "[4/5] Validating workflow_state.json..."
-python3 -c "
+export SCRIPT_DIR
+python3 << 'PYEOF'
 import json
 import sys
+import os
 
-with open('$SCRIPT_DIR/workflow_state.json', 'r') as f:
+script_dir = os.environ.get('SCRIPT_DIR', '.')
+with open(f'{{script_dir}}/workflow_state.json', 'r') as f:
     data = json.load(f)
 
 required = ['design_name', 'pdk', 'steps', 'completed']
@@ -399,10 +402,10 @@ for i, val in enumerate(data['completed']):
         print(f'Error: completed[{{i}}] is not boolean')
         sys.exit(1)
 
-print(f'      Design: {{data[\"design_name\"]}}')
-print(f'      Steps: {{len(data[\"steps\"])}}')
-print(f'      Progress: {{sum(data[\"completed\"])}}/{{len(data[\"completed\"])}}')
-"
+print(f'      Design: {{data["design_name"]}}')
+print(f'      Steps: {{len(data["steps"])}}')
+print(f'      Progress: {{sum(data["completed"])}}/{{len(data["completed"])}}')
+PYEOF
 
 # 5. Create output directory
 echo "[5/5] Checking output directory..."

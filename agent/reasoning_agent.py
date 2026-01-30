@@ -89,7 +89,7 @@ Each step must contain:
 - tool: Tool name to use
 - parameters: Tool parameters as object (e.g., {"width": 1.0, "length": 0.15})
 - expected_output: Expected output as object (e.g., {"component_name": "nmos_1", "success": true}), NOT a string
-- verification: Verification config with "type" and "conditions" (conditions MUST be a list, e.g., {"type": "component_exists", "conditions": [{"field": "name", "value": "nmos_1"}]})
+- verification: Verification config with "type" and "conditions" (conditions is a list of strings, e.g., {"type": "component_exists", "conditions": []})
 - depends_on: List of step_ids this step depends on (e.g., [1, 2])
 - routing_justification: (Only for routing steps) Explain metal layer choice
 
@@ -107,7 +107,7 @@ Each step must contain:
       "tool": "create_pmos",
       "parameters": {"width": 1.0, "length": 0.15, "fingers": 2},
       "expected_output": {"component_name": "pmos_1", "device_type": "pmos"},
-      "verification": {"type": "component_exists", "conditions": [{"field": "name", "value": "pmos_1"}]},
+      "verification": {"type": "component_exists", "conditions": []},
       "depends_on": [],
       "max_retries": 3
     }

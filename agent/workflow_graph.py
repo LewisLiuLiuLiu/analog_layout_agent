@@ -347,7 +347,7 @@ async def run_workflow(
             state=graph_state,
             deps=deps
         )
-        return result.data
+        return result.output
     except Exception as e:
         logger.error(f"Workflow failed: {e}")
         raise

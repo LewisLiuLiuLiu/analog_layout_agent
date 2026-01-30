@@ -156,7 +156,7 @@ class StepExecutor:
         
         # Get the tool handler from MCP server
         # The MCP server has tools registered - we need to call them
-        result = await self.mcp_server.handle_tool_call(tool_name, params)
+        result = self.mcp_server.call_tool(tool_name, params)
         
         return result
     
@@ -215,12 +215,14 @@ class StepExecutor:
         
         # Check in component registry
         try:
-            components = self.mcp_server.layout_context.component_registry.list_components()
-            if expected_name in [c["name"] for c in components]:
-                return VerificationResult(
-                    passed=True,
-                    message=f"Component {expected_name} found in registry"
-                )
+            layout_ctx = self.mcp_server.state_handler.get_context()
+            if layout_ctx:
+                components = layout_ctx.component_registry.list_components()
+                if expected_name in [c["name"] for c in components]:
+                    return VerificationResult(
+                        passed=True,
+                        message=f"Component {expected_name} found in registry"
+                    )
         except Exception as e:
             logger.warning(f"Could not check component registry: {e}")
         
@@ -317,7 +319,14 @@ class StepExecutor:
         Returns:
             dict: Complete context state
         """
-        layout_ctx = self.mcp_server.layout_context
+        layout_ctx = self.mcp_server.state_handler.get_context()
+        
+        if not layout_ctx:
+            return {
+                "pdk": "unknown",
+                "components": [],
+                "design_dir": str(self.context.design_dir) if self.context.design_dir else None
+            }
         
         try:
             components = layout_ctx.component_registry.list_components()
