@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     from .step_executor import StepExecutor
     from .reasoning_agent import ReasoningAgent
 
+# Import load_constitution for automatic loading
+from .reasoning_agent import load_constitution
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,12 +44,37 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LayoutAgentDeps:
-    """Dependencies for workflow graph nodes"""
+    """Dependencies for workflow graph nodes
+    
+    Constitution is automatically loaded via __post_init__ if not provided.
+    """
     design_dir: Path
     step_executor: "StepExecutor"
     reasoning_agent: Optional["ReasoningAgent"] = None
     constitution: str = ""
     temp_modified_params: Optional[dict] = None
+    init_status: Dict[str, Any] = field(default_factory=dict)  # 新增: 初始化状态
+    
+    def __post_init__(self):
+        """Auto-load constitution if not provided"""
+        if not self.constitution:
+            self.constitution = load_constitution()
+            if self.constitution:
+                logger.info(f"Constitution auto-loaded: {len(self.constitution)} chars")
+            else:
+                logger.warning("Constitution not loaded - workflow may not follow all rules")
+    
+    def record_init_executed(self, success: bool, output: str = ""):
+        """记录 init.sh 执行状态（供 LLM 感知）"""
+        self.init_status["init_sh_executed"] = True
+        self.init_status["init_sh_success"] = success
+        self.init_status["init_sh_output"] = output[:200] if output else ""
+    
+    def record_progress_read(self, last_lines: List[str] = None):
+        """记录 progress.md 读取状态（供 LLM 感知）"""
+        self.init_status["progress_read"] = True
+        if last_lines is not None:
+            self.init_status["progress_last_lines"] = last_lines
     
     async def call_tool(self, tool_name: str, params: dict) -> dict:
         """Call a tool through step executor"""
@@ -112,7 +140,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
         """
         Initialization node - runs init.sh, reads progress, determines next step.
         
-        This is the entry point for each workflow iteration.
+        宪法第一条强制执行点 + 状态记录（供后续 LLM session 感知）
         """
         
         async def run(
@@ -121,8 +149,8 @@ if PYDANTIC_GRAPH_AVAILABLE:
         ) -> "ExecuteStepNode | End[str]":
             design_dir = ctx.deps.design_dir
             
-            # 1. Execute init.sh (mandatory first step)
-            logger.info("Executing init.sh...")
+            # 1. 执行 init.sh (宪法 1.1)
+            logger.info("[Constitution 1.1] Executing init.sh...")
             init_script = design_dir / "init.sh"
             
             if init_script.exists():
@@ -132,29 +160,42 @@ if PYDANTIC_GRAPH_AVAILABLE:
                     capture_output=True,
                     text=True
                 )
-                if result.returncode != 0:
+                success = (result.returncode == 0)
+                
+                # 记录状态供后续 LLM session 感知
+                ctx.deps.record_init_executed(
+                    success=success,
+                    output=result.stdout or result.stderr
+                )
+                
+                if not success:
                     logger.error(f"init.sh failed: {result.stderr}")
                     return End(f"Initialization failed: {result.stderr}")
                 logger.info(f"init.sh completed (exit code: {result.returncode})")
             else:
                 logger.warning(f"init.sh not found at {init_script}")
             
-            # 2. Read progress.md last 50 lines (skip on first run)
+            # 2. 读取 progress.md (宪法 1.2)
             progress_file = design_dir / "progress.md"
             if progress_file.exists() and progress_file.stat().st_size > 0:
                 logger.debug("Reading progress.md last 50 lines...")
                 lines = progress_file.read_text().splitlines()
                 last_50 = lines[-50:] if len(lines) > 50 else lines
+                
+                # 记录状态供后续 LLM session 感知
+                ctx.deps.record_progress_read(last_50)
+                
                 logger.debug(f"Progress summary: {len(last_50)} lines")
             else:
                 logger.info("First run, skipping progress.md read")
             
-            # 3. Load AGENT_CONSTITUTION.md
-            constitution_path = Path(__file__).parent / "AGENT_CONSTITUTION.md"
-            if constitution_path.exists():
-                ctx.deps.constitution = constitution_path.read_text()
+            # 3. 宪法状态日志
+            if ctx.deps.constitution:
+                logger.debug(f"Constitution available: {len(ctx.deps.constitution)} chars")
+            else:
+                logger.warning("Constitution NOT loaded - agent rules may not be enforced")
             
-            # 4. Find first False step (mandatory step)
+            # 4. 找第一个 False 步骤 (宪法 1.3)
             first_false = next(
                 (i for i, done in enumerate(ctx.state.completed) if not done),
                 None

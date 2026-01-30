@@ -1,11 +1,14 @@
-"""
-Reasoning Agent for Layout Agent Loop
+"""Reasoning Agent for Layout Agent Loop
 
 Uses deepseek-reasoner model to:
 1. Plan workflow from user instructions
 2. Analyze failures and suggest fixes
 
 All outputs use PydanticAI structured output for type safety.
+
+Agent Constitution Integration:
+- AGENT_CONSTITUTION.md is automatically loaded and injected into system prompts
+- This ensures all planning decisions comply with constitutional rules
 """
 
 import os
@@ -21,6 +24,40 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Constitution Loading
+# ============================================================================
+
+# Path to AGENT_CONSTITUTION.md
+CONSTITUTION_PATH = Path(__file__).parent / "AGENT_CONSTITUTION.md"
+
+# Cache for constitution content
+_constitution_cache: Optional[str] = None
+
+
+def load_constitution() -> str:
+    """
+    Load AGENT_CONSTITUTION.md content.
+    
+    Uses module-level cache to avoid repeated file reads.
+    
+    Returns:
+        Constitution content as string, empty string if file not found
+    """
+    global _constitution_cache
+    
+    if _constitution_cache is not None:
+        return _constitution_cache
+    
+    if CONSTITUTION_PATH.exists():
+        _constitution_cache = CONSTITUTION_PATH.read_text(encoding="utf-8")
+        logger.info(f"Constitution loaded: {len(_constitution_cache)} chars")
+    else:
+        logger.warning(f"Constitution file not found: {CONSTITUTION_PATH}")
+        _constitution_cache = ""
+    
+    return _constitution_cache
 
 
 # ============================================================================
@@ -198,6 +235,8 @@ class ReasoningAgent:
     Responsibilities:
     1. Plan workflow from user instructions
     2. Analyze failures and suggest fixes
+    
+    宪法注入: 完整宪法在 __init__ 时注入到 system_prompt
     """
     
     def __init__(
@@ -229,26 +268,47 @@ class ReasoningAgent:
         # deepseek-reasoner does NOT support tool_choice, need to parse JSON manually
         self.use_structured_output = "reasoner" not in model_name.lower()
         
+        # ============== 完整宪法注入到规划 prompt ==============
+        constitution = load_constitution()
+        if constitution:
+            # 在 PLANNING_PROMPT 后追加完整宪法
+            planning_prompt_with_constitution = f"""{PLANNING_PROMPT}
+
+═══════════════════════════════════════════════════════════════
+              AGENT CONSTITUTION (MANDATORY)
+═══════════════════════════════════════════════════════════════
+
+{constitution}
+
+## 规划时必须遵守的宪法规则
+
+1. **步骤顺序**: device-creation → placement → routing → drc → export
+2. **Routing 规则**: 每个 routing 步骤必须指定 layer 参数
+3. **依赖关系**: depends_on 只能引用之前的步骤
+4. **验证配置**: 每个步骤必须有 verification 配置
+"""
+            logger.info(f"Constitution integrated: {len(constitution)} chars")
+        else:
+            planning_prompt_with_constitution = PLANNING_PROMPT
+            logger.warning("Constitution not loaded for ReasoningAgent")
+        
         if self.use_structured_output:
-            # Create planning agent with structured output
             self.planning_agent = Agent(
                 self.model,
                 output_type=WorkflowPlanOutput,
-                system_prompt=PLANNING_PROMPT
+                system_prompt=planning_prompt_with_constitution
             )
             
-            # Create failure analysis agent with structured output
             self.analysis_agent = Agent(
                 self.model,
                 output_type=FailureAnalysisOutput,
                 system_prompt=FAILURE_ANALYSIS_PROMPT
             )
         else:
-            # For reasoner models: use plain text output, parse JSON manually
             self.planning_agent = Agent(
                 self.model,
                 output_type=str,
-                system_prompt=PLANNING_PROMPT + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown code blocks, no extra text."
+                system_prompt=planning_prompt_with_constitution + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown code blocks, no extra text."
             )
             
             self.analysis_agent = Agent(

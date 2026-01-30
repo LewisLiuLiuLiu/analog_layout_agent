@@ -32,6 +32,7 @@ from core.circuit_builder import CircuitBuilder
 from core.verification import VerificationEngine
 from core.drc_advisor import analyze_drc_result
 from .prompt_templates import SYSTEM_PROMPT
+from .reasoning_agent import load_constitution
 
 
 # ============== 依赖类型定义 ==============
@@ -47,21 +48,27 @@ class LayoutAgentDeps:
         mcp_server: MCP Server 实例，提供统一的工具调用入口
         circuit_builder: 电路构建器，用于创建复合电路
         verification_engine: 验证引擎，用于 DRC/LVS 验证
+        constitution: Agent 宪法内容（强制遵循规则）
+        session_id: 当前 session 标识（用于追踪）
+        init_status: 初始化状态信息（供 LLM 感知 Flow 执行结果）
     """
     mcp_server: MCPServer
     circuit_builder: CircuitBuilder
     verification_engine: VerificationEngine
+    constitution: str = ""
+    session_id: str = ""
+    init_status: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """初始化时自动加载宪法并生成 session_id"""
+        if not self.constitution:
+            self.constitution = load_constitution()
+        if not self.session_id:
+            import uuid
+            self.session_id = str(uuid.uuid4())[:8]
     
     def call_tool(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """统一的工具调用入口
-        
-        Args:
-            tool_name: 工具名称
-            params: 工具参数
-            
-        Returns:
-            工具执行结果
-        """
+        """统一的工具调用入口"""
         return self.mcp_server.call_tool(tool_name, params or {})
 
 
@@ -73,38 +80,25 @@ def create_layout_agent(
     base_url: Optional[str] = None,
     use_skills: bool = False
 ) -> Tuple[Agent[LayoutAgentDeps, str], Optional[Any]]:
-    """创建 Layout Agent 实例
+    """创建 Layout Agent 实例"""
     
-    Args:
-        model_name: 模型名称 (如 deepseek-chat, deepseek-reasoner, gpt-4o)
-        api_key: API 密钥，默认从环境变量读取
-        base_url: API Base URL，默认从环境变量读取
-        use_skills: 是否使用 Skills 模式（推荐 True，支持渐进式披露减少Token消耗）
-        
-    Returns:
-        Tuple: (配置好的 Agent 实例, SkillsToolset 或 None)
-    """
-    # 获取 API 配置（优先级：参数 > 环境变量 > 默认值）
     if api_key is None:
         api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     if base_url is None:
         base_url = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
     
-    # 创建 OpenAI 兼容的 Provider 和 Model
     provider = OpenAIProvider(base_url=base_url, api_key=api_key)
     model = OpenAIChatModel(model_name, provider=provider)
     
     skills_toolset = None
     
     if use_skills:
-        # Skills 模式：使用 PydanticAI Skills 实现渐进式披露
         try:
             from ..skills import create_layout_skills_toolset
             
             skills_toolset = create_layout_skills_toolset()
             
-            # 创建 Agent，使用 SkillsToolset
             layout_agent = Agent(
                 model,
                 deps_type=LayoutAgentDeps,
@@ -114,21 +108,25 @@ def create_layout_agent(
                 toolsets=[skills_toolset]
             )
             
-            # 添加技能指令到系统提示（渐进式披露的核心）
             @layout_agent.instructions
             async def add_skills_instructions(ctx: RunContext[LayoutAgentDeps]) -> str | None:
-                """动态添加技能列表到系统提示，实现渐进式披露"""
+                """动态添加技能列表到系统提示"""
                 return await skills_toolset.get_instructions(ctx)
+            
+            # Skills 模式也需要注入宪法
+            @layout_agent.instructions
+            async def inject_constitution_skills(ctx: RunContext[LayoutAgentDeps]) -> str:
+                """Skills 模式下的宪法注入"""
+                return _build_constitution_injection(ctx.deps)
             
             return layout_agent, skills_toolset
             
         except ImportError as e:
-            # Skills 模块导入失败，回退到传统模式
             import warnings
             warnings.warn(f"Skills 模块导入失败: {e}，回退到传统模式")
             use_skills = False
     
-    # 传统模式：直接注册所有工具
+    # 传统模式
     layout_agent = Agent(
         model,
         deps_type=LayoutAgentDeps,
@@ -136,6 +134,24 @@ def create_layout_agent(
         system_prompt=SYSTEM_PROMPT,
         retries=2,
     )
+    
+    # ============== Session 级宪法完整注入 ==============
+    @layout_agent.instructions
+    async def inject_constitution(ctx: RunContext[LayoutAgentDeps]) -> str:
+        """
+        Session 级宪法完整注入
+        
+        此函数在每次 agent.run() 调用时执行，确保：
+        1. 每个新 session 都注入完整宪法（AGENT_CONSTITUTION.md）
+        2. 宪法内容作为 LLM 收到的第一部分指令
+        3. 包含 session 标识和初始化状态
+        
+        PydanticAI 机制：
+        - @agent.instructions 装饰的函数返回值追加到 system_prompt 之后
+        - 在 LLM 收到用户指令之前执行
+        - 每次 agent.run() 都会触发（session 级别）
+        """
+        return _build_constitution_injection(ctx.deps)
     
     # 注册所有工具
     _register_device_tools(layout_agent)
@@ -147,6 +163,64 @@ def create_layout_agent(
     _register_export_tools(layout_agent)
     
     return layout_agent, None
+
+
+def _build_constitution_injection(deps: LayoutAgentDeps) -> str:
+    """
+    构建宪法注入内容
+    
+    Args:
+        deps: Agent 依赖项，包含宪法内容和 session 信息
+        
+    Returns:
+        格式化的宪法注入字符串
+    """
+    parts = []
+    
+    # 1. Session 标识
+    parts.append(f"""
+═══════════════════════════════════════════════════════════════
+                    SESSION INITIALIZED
+                    ID: {deps.session_id}
+═══════════════════════════════════════════════════════════════
+""")
+    
+    # 2. 完整宪法内容（强制）
+    constitution = deps.constitution or load_constitution()
+    if constitution:
+        parts.append("""
+## 🚨 AGENT CONSTITUTION (最高优先级 - 必须遵守)
+
+以下是 Agent 宪法的完整内容。任何违反都将导致任务失败。
+在处理任何请求之前，请确保理解并遵守所有规则。
+
+""")
+        parts.append(constitution)
+    else:
+        parts.append("\n⚠️ 警告: 宪法文件未加载，请检查 AGENT_CONSTITUTION.md\n")
+    
+    # 3. 初始化状态感知（如果有）
+    if deps.init_status:
+        parts.append("\n\n## 当前初始化状态\n")
+        if deps.init_status.get("init_sh_executed"):
+            status = "✓ 成功" if deps.init_status.get("init_sh_success") else "✗ 失败"
+            parts.append(f"- [宪法1.1] init.sh: {status}\n")
+        if deps.init_status.get("progress_read"):
+            parts.append(f"- [宪法1.2] progress.md: 已读取\n")
+    
+    # 4. 合规确认提示
+    parts.append("""
+
+## 执行前确认
+
+在执行任何操作前，我已确认：
+- ✓ 已阅读并理解上述宪法全部内容
+- ✓ 将按照宪法规定的顺序执行步骤
+- ✓ routing 操作将指定 layer 参数
+- ✓ 只有验证通过才会修改 completed 状态
+""")
+    
+    return "".join(parts)
 
 
 # ============== 器件工具 ==============
