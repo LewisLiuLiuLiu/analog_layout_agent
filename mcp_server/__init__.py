@@ -1,7 +1,9 @@
 """
 MCP Server module - Model Context Protocol 服务端
+MCP Server module - Model Context Protocol server-side
 
 提供LLM友好的工具抽象层，支持 PydanticAI 框架集成
+Provides LLM-friendly tool abstraction layer, supports PydanticAI framework integration
 """
 
 from .server import MCPServer, get_server
@@ -25,7 +27,7 @@ __all__ = [
     "MCPLayoutToolset",
     "MCPLayoutToolsetAsync",
     "create_layout_toolset",
-    # 工具类别常量
+    # 工具类别常量 / Tool category constants
     "DEVICE_TOOLS",
     "ROUTING_TOOLS",
     "PLACEMENT_TOOLS",

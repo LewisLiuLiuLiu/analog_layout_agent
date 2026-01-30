@@ -1,13 +1,15 @@
 """
 Prompt Templates - Prompt模板
+Prompt Templates - Prompt templates for LLM interaction
 
 为LLM提供结构化的提示模板，用于任务分解、错误恢复等
+Provides structured prompt templates for LLM, used for task decomposition, error recovery, etc.
 """
 
 from typing import Dict, Any, List, Optional
 
 
-# ============== 系统Prompt ==============
+# ============== 系统Prompt / System Prompt ==============
 
 SYSTEM_PROMPT = """你是一个专业的模拟集成电路版图设计助手(Analog Layout Agent)。
 
@@ -74,7 +76,7 @@ SYSTEM_PROMPT = """你是一个专业的模拟集成电路版图设计助手(Ana
 """
 
 
-# ============== 任务分解Prompt ==============
+# ============== 任务分解Prompt / Task Decomposition Prompt ==============
 
 TASK_DECOMPOSITION_PROMPT = """
 请将用户的设计需求分解为具体的操作步骤。

@@ -1,7 +1,9 @@
 """
 Component Registry - 组件注册表
+Component Registry - Component registration management
 
 管理布局过程中创建的所有组件，提供命名、查找、跟踪功能
+Manages all components created during the layout process, providing naming, lookup, and tracking functions
 """
 
 import re
@@ -12,32 +14,32 @@ from datetime import datetime
 
 @dataclass
 class ComponentInfo:
-    """组件信息数据类"""
+    """组件信息数据类 / Component information data class"""
     
-    name: str                          # 组件名称
-    component: Any                     # gdsfactory Component实例
-    device_type: str                   # 器件类型 (nmos, pmos, current_mirror等)
-    params: Dict[str, Any]             # 创建参数
-    created_at: datetime = field(default_factory=datetime.now)  # 创建时间
-    ports: List[str] = field(default_factory=list)  # 端口列表
-    bbox: Tuple[float, float, float, float] = (0, 0, 0, 0)  # 边界框 (xmin, ymin, xmax, ymax)
-    parent: Optional[str] = None       # 父组件名称（用于层次化设计）
-    children: List[str] = field(default_factory=list)  # 子组件列表
-    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
+    name: str                          # 组件名称 / Component name
+    component: Any                     # gdsfactory Component实例 / gdsfactory Component instance
+    device_type: str                   # 器件类型 (nmos, pmos, current_mirror等) / Device type
+    params: Dict[str, Any]             # 创建参数 / Creation parameters
+    created_at: datetime = field(default_factory=datetime.now)  # 创建时间 / Creation time
+    ports: List[str] = field(default_factory=list)  # 端口列表 / Port list
+    bbox: Tuple[float, float, float, float] = (0, 0, 0, 0)  # 边界框 (xmin, ymin, xmax, ymax) / Bounding box
+    parent: Optional[str] = None       # 父组件名称（用于层次化设计） / Parent component name (for hierarchical design)
+    children: List[str] = field(default_factory=list)  # 子组件列表 / Child component list
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据 / Extra metadata
     
     @property
     def size(self) -> Tuple[float, float]:
-        """获取组件尺寸 (width, height)"""
+        """获取组件尺寸 (width, height) / Get component size"""
         return (self.bbox[2] - self.bbox[0], self.bbox[3] - self.bbox[1])
     
     @property
     def area(self) -> float:
-        """获取组件面积"""
+        """获取组件面积 / Get component area"""
         w, h = self.size
         return w * h
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式 / Convert to dictionary format"""
         return {
             "name": self.name,
             "device_type": self.device_type,
@@ -54,13 +56,14 @@ class ComponentInfo:
 
 
 class ComponentRegistry:
-    """组件注册表
+    """组件注册表 / Component Registry
     
     负责管理布局过程中创建的所有组件，提供：
-    - 自动命名和重名处理
-    - 组件查找和遍历
-    - 层次结构管理
-    - 组件信息跟踪
+    Manages all components created during layout process, providing:
+    - 自动命名和重名处理 / Auto-naming and duplicate name handling
+    - 组件查找和遍历 / Component lookup and traversal
+    - 层次结构管理 / Hierarchy management
+    - 组件信息跟踪 / Component information tracking
     
     Usage:
         >>> registry = ComponentRegistry()
@@ -70,10 +73,10 @@ class ComponentRegistry:
     """
     
     def __init__(self):
-        """初始化组件注册表"""
+        """初始化组件注册表 / Initialize component registry"""
         self._components: Dict[str, ComponentInfo] = {}
-        self._name_counters: Dict[str, int] = {}  # 用于自动编号
-        self._type_index: Dict[str, List[str]] = {}  # 类型索引
+        self._name_counters: Dict[str, int] = {}  # 用于自动编号 / For auto-numbering
+        self._type_index: Dict[str, List[str]] = {}  # 类型索引 / Type index
         
     def register(
         self,

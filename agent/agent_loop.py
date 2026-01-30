@@ -1,7 +1,9 @@
 """
 Agent Loop Controller for Layout Agent
+布局代理的代理循环控制器
 
 Main entry point for running the Reasoning-Execution loop.
+运行推理-执行循环的主入口。
 """
 
 import logging
@@ -29,19 +31,21 @@ logger = get_logger()
 
 
 class DRCStrategy(Enum):
-    """DRC verification strategy"""
-    CRITICAL_STEPS = "critical_steps"  # Only after routing/placement
-    EVERY_STEP = "every_step"          # After every step
+    """DRC verification strategy
+    DRC 验证策略"""
+    CRITICAL_STEPS = "critical_steps"  # Only after routing/placement / 仅在路由/布局后
+    EVERY_STEP = "every_step"          # After every step / 每步之后
 
 
 class AgentLoop:
     """
     Agent Loop main controller.
+    代理循环主控制器。
     
-    Orchestrates the Reasoning-Execution loop:
-    1. First run: Reasoning Agent plans workflow
-    2. Subsequent runs: Execute steps one by one
-    3. On failure: Call Reasoning Agent for analysis
+    Orchestrates the Reasoning-Execution loop / 编排推理-执行循环:
+    1. First run: Reasoning Agent plans workflow / 首次运行: 推理代理规划工作流
+    2. Subsequent runs: Execute steps one by one / 后续运行: 逐步执行
+    3. On failure: Call Reasoning Agent for analysis / 失败时: 调用推理代理进行分析
     """
     
     def __init__(
@@ -56,22 +60,23 @@ class AgentLoop:
     ):
         """
         Initialize Agent Loop.
+        初始化代理循环。
         
         Args:
-            mcp_server: MCP server instance with tools
-            designs_dir: Base directory for designs
-            reasoning_api_key: API key for Reasoning Agent
-            reasoning_base_url: API base URL
-            reasoning_model: Model name for Reasoning Agent (e.g., 'deepseek-reasoner', 'deepseek-chat')
-            drc_strategy: DRC verification strategy
-            max_iterations: Maximum iterations to prevent loops
+            mcp_server: MCP server instance with tools / 带工具的 MCP 服务器实例
+            designs_dir: Base directory for designs / 设计文件的基础目录
+            reasoning_api_key: API key for Reasoning Agent / 推理代理的 API 密钥
+            reasoning_base_url: API base URL / API 基础 URL
+            reasoning_model: Model name for Reasoning Agent (e.g., 'deepseek-reasoner', 'deepseek-chat') / 推理代理的模型名称
+            drc_strategy: DRC verification strategy / DRC 验证策略
+            max_iterations: Maximum iterations to prevent loops / 防止循环的最大迭代次数
         """
         self.mcp_server = mcp_server
         self.designs_dir = Path(designs_dir)
         self.drc_strategy = drc_strategy
         self.max_iterations = max_iterations
         
-        # Initialize Reasoning Agent
+        # Initialize Reasoning Agent / 初始化推理代理
         try:
             self.reasoning_agent = ReasoningAgent(
                 api_key=reasoning_api_key,
@@ -83,7 +88,7 @@ class AgentLoop:
             logger.warning(f"Could not initialize Reasoning Agent: {e}")
             self.reasoning_agent = None
         
-        # Load available skills
+        # Load available skills / 加载可用技能
         skills_dir = Path(__file__).parent.parent / "skills"
         self.available_skills = load_available_skills(skills_dir)
     
@@ -95,21 +100,22 @@ class AgentLoop:
     ) -> dict:
         """
         Run the Agent Loop.
+        运行代理循环。
         
-        Process:
-        1. Check if workflow exists
-        2. If not, call Reasoning Agent to plan
-        3. Run execution loop
+        Process / 处理流程:
+        1. Check if workflow exists / 检查工作流是否存在
+        2. If not, call Reasoning Agent to plan / 如果不存在，调用推理代理进行规划
+        3. Run execution loop / 运行执行循环
         
         Args:
-            instruction: User instruction for the design
-            pdk: PDK name
-            design_name: Design name (generated if not provided)
+            instruction: User instruction for the design / 设计的用户指令
+            pdk: PDK name / PDK 名称
+            design_name: Design name (generated if not provided) / 设计名称（如果未提供则自动生成）
             
         Returns:
-            dict: Execution result
+            dict: Execution result / 执行结果
         """
-        # Generate design name if not provided
+        # Generate design name if not provided / 如果未提供设计名称则生成
         if not design_name:
             design_name = self._generate_design_name(instruction)
         
@@ -117,7 +123,7 @@ class AgentLoop:
         workflow_path = design_dir / "workflow_state.json"
         progress_path = design_dir / "progress.md"
         
-        # Setup logging for this design
+        # Setup logging for this design / 为此设计设置日志
         log_file = design_dir / "agent.log"
         setup_agent_logging(
             project_name=f"layout-agent-{design_name}",
@@ -129,7 +135,7 @@ class AgentLoop:
         logger.info(f"PDK: {pdk}")
         logger.info(f"Instruction: {instruction[:100]}...")
         
-        # Check if workflow exists
+        # Check if workflow exists / 检查工作流是否存在
         if not workflow_path.exists():
             logger.info("No existing workflow found, planning new workflow...")
             
@@ -139,7 +145,7 @@ class AgentLoop:
                     "error": "Reasoning Agent not available for planning"
                 }
             
-            # Plan workflow
+            # Plan workflow / 规划工作流
             try:
                 plan = await self.reasoning_agent.plan_workflow(
                     instruction=instruction,
@@ -147,7 +153,7 @@ class AgentLoop:
                     available_skills=self.available_skills
                 )
                 
-                # Save workflow state
+                # Save workflow state / 保存工作流状态
                 design_dir.mkdir(parents=True, exist_ok=True)
                 workflow = create_initial_workflow_state(
                     design_name=plan.design_name,
@@ -156,10 +162,10 @@ class AgentLoop:
                     output_path=workflow_path
                 )
                 
-                # Create progress file
+                # Create progress file / 创建进度文件
                 create_progress_file(workflow, progress_path)
                 
-                # Create init.sh
+                # Create init.sh / 创建 init.sh 脚本
                 self._create_init_script(design_dir)
                 
                 logger.info(f"Workflow planned with {len(plan.steps)} steps")
@@ -171,7 +177,7 @@ class AgentLoop:
                     "error": f"Planning failed: {e}"
                 }
         
-        # Validate workflow
+        # Validate workflow / 验证工作流
         is_valid, error = validate_workflow_state(workflow_path)
         if not is_valid:
             return {
@@ -179,10 +185,10 @@ class AgentLoop:
                 "error": f"Invalid workflow state: {error}"
             }
         
-        # Load workflow
+        # Load workflow / 加载工作流
         workflow = load_workflow_state(workflow_path)
         
-        # Check if already completed
+        # Check if already completed / 检查是否已完成
         if workflow.is_all_completed():
             logger.info("Workflow already completed!")
             return {
@@ -191,7 +197,7 @@ class AgentLoop:
                 "summary": get_workflow_summary(workflow)
             }
         
-        # Run execution loop
+        # Run execution loop / 运行执行循环
         if PYDANTIC_GRAPH_AVAILABLE:
             result = await self._run_with_graph(design_dir, workflow)
         else:

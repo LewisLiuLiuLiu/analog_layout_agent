@@ -1,7 +1,9 @@
 """
 MCP Server - Model Context Protocol Server主入口
+MCP Server - Model Context Protocol Server main entry
 
 提供LLM友好的工具调用接口，遵循MCP协议规范
+Provides LLM-friendly tool invocation interface, following MCP protocol specification
 """
 
 import json
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 
-# 添加路径
+# 添加路径 / Add paths
 _BASE_PATH = Path(__file__).parent.parent
 if str(_BASE_PATH) not in sys.path:
     sys.path.insert(0, str(_BASE_PATH))
@@ -35,14 +37,14 @@ from mcp_server.schemas.common_schemas import (
 )
 
 
-# 配置日志
+# 配置日志 / Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ToolDefinition:
-    """工具定义"""
+    """工具定义 / Tool definition"""
     name: str
     description: str
     input_schema: Dict[str, Any]
@@ -52,13 +54,13 @@ class ToolDefinition:
 
 @dataclass
 class ToolResult:
-    """工具执行结果"""
+    """工具执行结果 / Tool execution result"""
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """转换为字典 / Convert to dictionary"""
         result = {"success": self.success}
         if self.data:
             result["data"] = self.data
@@ -69,12 +71,14 @@ class ToolResult:
 
 class MCPServer:
     """MCP Server - Model Context Protocol服务端
+    MCP Server - Model Context Protocol server
     
     提供LLM工具调用的标准化接口：
-    - 工具注册和发现
-    - 工具执行和结果返回
-    - 状态管理
-    - 错误处理
+    Provides standardized interface for LLM tool invocation:
+    - 工具注册和发现 / Tool registration and discovery
+    - 工具执行和结果返回 / Tool execution and result return
+    - 状态管理 / State management
+    - 错误处理 / Error handling
     
     Usage:
         >>> server = MCPServer()

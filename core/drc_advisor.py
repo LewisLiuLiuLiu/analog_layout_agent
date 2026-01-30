@@ -1,7 +1,9 @@
 """
 DRC Advisor - DRC自动修复建议器
+DRC Advisor - DRC automatic fix suggestion engine
 
 分析DRC违规并提供修复建议
+Analyzes DRC violations and provides fix suggestions
 """
 
 import os
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 
-# 添加路径
+# 添加路径 / Add paths
 _BASE_PATH = Path(__file__).parent.parent
 if str(_BASE_PATH) not in sys.path:
     sys.path.insert(0, str(_BASE_PATH))
@@ -20,7 +22,7 @@ _GLAYOUT_PATH = _BASE_PATH.parent / "gLayout" / "src"
 if str(_GLAYOUT_PATH) not in sys.path:
     sys.path.insert(0, str(_GLAYOUT_PATH))
 
-# 设置 PDK_ROOT 环境变量
+# 设置 PDK_ROOT 环境变量 / Set PDK_ROOT environment variable
 _PDK_ROOT = _BASE_PATH.parent / "skywater-pdk"
 if _PDK_ROOT.exists() and not os.environ.get('PDK_ROOT'):
     os.environ['PDK_ROOT'] = str(_PDK_ROOT)
@@ -30,18 +32,18 @@ from core.verification import DRCViolation, DRCResult
 
 @dataclass
 class FixSuggestion:
-    """修复建议"""
-    violation_id: str           # 违规ID
-    action: str                 # 修复动作
-    target: str                 # 目标对象
-    parameter: str              # 需要修改的参数
-    current_value: Optional[float] = None   # 当前值
-    suggested_value: Optional[float] = None # 建议值
-    confidence: float = 0.5     # 置信度 (0-1)
-    description: str = ""       # 描述
+    """修复建议 / Fix suggestion"""
+    violation_id: str           # 违规ID / Violation ID
+    action: str                 # 修复动作 / Fix action
+    target: str                 # 目标对象 / Target object
+    parameter: str              # 需要修改的参数 / Parameter to modify
+    current_value: Optional[float] = None   # 当前值 / Current value
+    suggested_value: Optional[float] = None # 建议值 / Suggested value
+    confidence: float = 0.5     # 置信度 (0-1) / Confidence (0-1)
+    description: str = ""       # 描述 / Description
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """转换为字典 / Convert to dictionary"""
         return {
             "violation_id": self.violation_id,
             "action": self.action,
@@ -55,26 +57,27 @@ class FixSuggestion:
 
 
 class DRCAdvisor:
-    """DRC修复建议器
+    """DRC修复建议器 / DRC Fix Advisor
     
     分析DRC违规并根据规则类型提供修复建议。
+    Analyzes DRC violations and provides fix suggestions based on rule type.
     
-    支持的违规类型:
-    - spacing: 间距违规 -> 增加间距
-    - width: 宽度违规 -> 增大线宽
-    - enclosure: 包络违规 -> 扩大包围尺寸
-    - density: 密度违规 -> 添加填充
-    - area: 面积违规 -> 增大面积
-    - overlap: 重叠违规 -> 调整位置
+    支持的违规类型 / Supported violation types:
+    - spacing: 间距违规 -> 增加间距 / spacing violation -> increase spacing
+    - width: 宽度违规 -> 增大线宽 / width violation -> increase width
+    - enclosure: 包络违规 -> 扩大包围尺寸 / enclosure violation -> increase enclosure
+    - density: 密度违规 -> 添加填充 / density violation -> add fill
+    - area: 面积违规 -> 增大面积 / area violation -> increase area
+    - overlap: 重叠违规 -> 调整位置 / overlap violation -> adjust position
     
     Usage:
         >>> advisor = DRCAdvisor(pdk_name="sky130")
         >>> suggestions = advisor.analyze(drc_result)
     """
     
-    # 违规类型到修复动作的映射
+    # 违规类型到修复动作的映射 / Mapping from violation type to fix action
     VIOLATION_ACTIONS = {
-        # 间距相关
+        # 间距相关 / Spacing related
         "spacing": "increase_spacing",
         "space": "increase_spacing",
         "sep": "increase_spacing",

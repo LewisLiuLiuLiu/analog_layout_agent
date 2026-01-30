@@ -1,7 +1,9 @@
 """
 Workflow Graph for Layout Agent Loop
+工作流图 - 用于布局代理循环
 
 Uses pydantic-graph to manage workflow state machine.
+使用 pydantic-graph 管理工作流状态机。
 """
 
 import logging
@@ -11,12 +13,14 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING, Any
 
 # Try to import pydantic-graph
+# 尝试导入 pydantic-graph 库
 try:
     from pydantic_graph import Graph, BaseNode, End, GraphRunContext
     PYDANTIC_GRAPH_AVAILABLE = True
 except ImportError:
     PYDANTIC_GRAPH_AVAILABLE = False
     # Provide stub classes for type hints
+    # 提供用于类型提示的占位类
     class Graph:
         pass
     class BaseNode:
@@ -33,30 +37,34 @@ if TYPE_CHECKING:
     from .reasoning_agent import ReasoningAgent
 
 # Import load_constitution for automatic loading
+# 导入 load_constitution 用于自动加载宪法配置
 from .reasoning_agent import load_constitution
 
 logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Dependencies
+# Dependencies / 依赖项
 # ============================================================================
 
 @dataclass
 class LayoutAgentDeps:
     """Dependencies for workflow graph nodes
+    工作流图节点的依赖项
     
     Constitution is automatically loaded via __post_init__ if not provided.
+    如果未提供，宪法配置将通过 __post_init__ 自动加载。
     """
     design_dir: Path
     step_executor: "StepExecutor"
     reasoning_agent: Optional["ReasoningAgent"] = None
     constitution: str = ""
     temp_modified_params: Optional[dict] = None
-    init_status: Dict[str, Any] = field(default_factory=dict)  # 新增: 初始化状态
+    init_status: Dict[str, Any] = field(default_factory=dict)  # New: Initialization status / 新增: 初始化状态
     
     def __post_init__(self):
-        """Auto-load constitution if not provided"""
+        """Auto-load constitution if not provided
+        如果未提供则自动加载宪法配置"""
         if not self.constitution:
             self.constitution = load_constitution()
             if self.constitution:
@@ -65,22 +73,28 @@ class LayoutAgentDeps:
                 logger.warning("Constitution not loaded - workflow may not follow all rules")
     
     def record_init_executed(self, success: bool, output: str = ""):
-        """记录 init.sh 执行状态（供 LLM 感知）"""
+        """Record init.sh execution status (for LLM awareness)
+        记录 init.sh 执行状态（供 LLM 感知）"""
         self.init_status["init_sh_executed"] = True
         self.init_status["init_sh_success"] = success
         self.init_status["init_sh_output"] = output[:200] if output else ""
     
     def record_progress_read(self, last_lines: List[str] = None):
-        """记录 progress.md 读取状态（供 LLM 感知）"""
+        """Record progress.md read status (for LLM awareness)
+        记录 progress.md 读取状态（供 LLM 感知）"""
         self.init_status["progress_read"] = True
         if last_lines is not None:
             self.init_status["progress_last_lines"] = last_lines
     
     async def call_tool(self, tool_name: str, params: dict) -> dict:
-        """Call a tool through step executor"""
+        """
+        Call a tool through step executor
+        通过步骤执行器调用工具
+        """
         from ..state.models import StepDefinition, VerificationConfig
         
         # Create a minimal step definition for the executor
+        # 为执行器创建最小化的步骤定义
         step = StepDefinition(
             step_id=0,
             category="direct-call",
@@ -90,27 +104,38 @@ class LayoutAgentDeps:
             verification=VerificationConfig(type="default", conditions=[])
         )
         
-        result = await self.step_executor.execute_step(step, [True] * 100)  # Bypass dependency check
+        result = await self.step_executor.execute_step(step, [True] * 100)  # Bypass dependency check / 绕过依赖检查
         return result.to_dict() if hasattr(result, 'to_dict') else {"success": result.success}
     
     async def verify_step(self, step: dict, tool_result: dict) -> bool:
-        """Verify a step execution"""
+        """
+        Verify a step execution
+        验证步骤执行结果
+        """
         # Simple verification - check if tool succeeded
+        # 简单验证 - 检查工具是否执行成功
         return tool_result.get("success", False)
     
     async def save_workflow_state(self, state: LayoutWorkflowState) -> None:
-        """Save workflow state to file"""
+        """
+        Save workflow state to file
+        保存工作流状态到文件
+        """
         from ..state.workflow_manager import save_workflow_state
         
         workflow = state.to_workflow_state()
         save_workflow_state(workflow, self.design_dir / "workflow_state.json")
     
     async def append_progress(self, step: dict, result: dict) -> None:
-        """Append progress record"""
+        """
+        Append progress record
+        追加进度记录
+        """
         from ..state.progress_writer import append_session_record
         from ..state.models import StepDefinition, StepResult, VerificationConfig
         
         # Convert dict to StepDefinition
+        # 将字典转换为 StepDefinition 对象
         if isinstance(step.get('verification'), dict):
             step['verification'] = VerificationConfig(**step['verification'])
         step_def = StepDefinition(**step)
@@ -125,12 +150,16 @@ class LayoutAgentDeps:
             append_session_record(progress_path, step_def, step_result)
     
     def get_full_context(self) -> dict:
-        """Get full layout context"""
+        """
+        Get full layout context
+        获取完整的布局上下文
+        """
         return self.step_executor.get_full_context()
 
 
 # ============================================================================
 # Graph Nodes (only defined if pydantic-graph is available)
+# 图节点      （仅当 pydantic-graph 可用时定义）
 # ============================================================================
 
 if PYDANTIC_GRAPH_AVAILABLE:
@@ -139,8 +168,10 @@ if PYDANTIC_GRAPH_AVAILABLE:
     class InitNode(BaseNode[LayoutWorkflowState, LayoutAgentDeps, str]):
         """
         Initialization node - runs init.sh, reads progress, determines next step.
+        初始化节点 - 运行 init.sh，读取进度，确定下一步骤。
         
         宪法第一条强制执行点 + 状态记录（供后续 LLM session 感知）
+        Constitution Article 1 enforcement point + status recording (for subsequent LLM session awareness)
         """
         
         async def run(
@@ -149,6 +180,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
         ) -> "ExecuteStepNode | End[str]":
             design_dir = ctx.deps.design_dir
             
+            # 1. Execute init.sh (Constitution 1.1)
             # 1. 执行 init.sh (宪法 1.1)
             logger.info("[Constitution 1.1] Executing init.sh...")
             init_script = design_dir / "init.sh"
@@ -162,6 +194,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
                 )
                 success = (result.returncode == 0)
                 
+                # Record status for subsequent LLM session awareness
                 # 记录状态供后续 LLM session 感知
                 ctx.deps.record_init_executed(
                     success=success,
@@ -175,6 +208,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
             else:
                 logger.warning(f"init.sh not found at {init_script}")
             
+            # 2. Read progress.md (Constitution 1.2)
             # 2. 读取 progress.md (宪法 1.2)
             progress_file = design_dir / "progress.md"
             if progress_file.exists() and progress_file.stat().st_size > 0:
@@ -182,6 +216,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
                 lines = progress_file.read_text().splitlines()
                 last_50 = lines[-50:] if len(lines) > 50 else lines
                 
+                # Record status for subsequent LLM session awareness
                 # 记录状态供后续 LLM session 感知
                 ctx.deps.record_progress_read(last_50)
                 
@@ -189,12 +224,14 @@ if PYDANTIC_GRAPH_AVAILABLE:
             else:
                 logger.info("First run, skipping progress.md read")
             
+            # 3. Constitution status logging
             # 3. 宪法状态日志
             if ctx.deps.constitution:
                 logger.debug(f"Constitution available: {len(ctx.deps.constitution)} chars")
             else:
                 logger.warning("Constitution NOT loaded - agent rules may not be enforced")
             
+            # 4. Find the first False step (Constitution 1.3)
             # 4. 找第一个 False 步骤 (宪法 1.3)
             first_false = next(
                 (i for i, done in enumerate(ctx.state.completed) if not done),
@@ -215,7 +252,10 @@ if PYDANTIC_GRAPH_AVAILABLE:
     
     @dataclass
     class ExecuteStepNode(BaseNode[LayoutWorkflowState, LayoutAgentDeps, str]):
-        """Execute the current step"""
+        """
+        Execute the current step
+        执行当前步骤
+        """
         
         async def run(
             self,
@@ -227,8 +267,9 @@ if PYDANTIC_GRAPH_AVAILABLE:
             logger.debug(f"  Parameters: {step['parameters']}")
             
             # Use modified params if available (from failure recovery)
+            # 如果有修改后的参数则使用（来自失败恢复）
             params = ctx.deps.temp_modified_params or step['parameters']
-            ctx.deps.temp_modified_params = None  # Clear after use
+            ctx.deps.temp_modified_params = None  # Clear after use / 使用后清除
             
             try:
                 result = await ctx.deps.call_tool(step['tool'], params)
@@ -249,7 +290,8 @@ if PYDANTIC_GRAPH_AVAILABLE:
     
     @dataclass
     class VerifyStepNode(BaseNode[LayoutWorkflowState, LayoutAgentDeps, str]):
-        """Verify step execution and update state"""
+        """Verify step execution and update state
+        验证步骤执行并更新状态"""
         tool_result: dict = field(default_factory=dict)
         
         async def run(
@@ -261,27 +303,33 @@ if PYDANTIC_GRAPH_AVAILABLE:
             logger.info(f"Verifying step: {step['verification']['type']}")
             
             # Execute verification
+            # 执行验证
             verification_passed = await ctx.deps.verify_step(step, self.tool_result)
             
             if verification_passed:
                 logger.info("Verification passed")
                 
                 # Update state: False -> True (only allowed modification)
+                # 更新状态: False -> True (唯一允许的修改)
                 ctx.state.completed[ctx.state.current_step_index] = True
                 logger.info(f"Updated state: Step {step['step_id']} -> true")
                 
                 # Save state to file
+                # 保存状态到文件
                 await ctx.deps.save_workflow_state(ctx.state)
                 
                 # Update progress.md
+                # 更新 progress.md
                 await ctx.deps.append_progress(step, self.tool_result)
                 
                 # Check if all completed
+                # 检查是否全部完成
                 if all(ctx.state.completed):
                     logger.info("=== All steps completed ===")
                     return End("Design completed")
                 
                 # Continue to next step
+                # 继续下一步骤
                 return InitNode()
             else:
                 logger.warning("Verification failed")
@@ -290,7 +338,8 @@ if PYDANTIC_GRAPH_AVAILABLE:
     
     @dataclass
     class FailureAnalysisNode(BaseNode[LayoutWorkflowState, LayoutAgentDeps, str]):
-        """Analyze failure and attempt recovery"""
+        """Analyze failure and attempt recovery
+        分析失败原因并尝试恢复"""
         error: str = ""
         
         async def run(
@@ -307,6 +356,7 @@ if PYDANTIC_GRAPH_AVAILABLE:
                 return End(f"Step {step['step_id']} failed: {self.error}")
             
             # Call Reasoning Agent for analysis
+            # 调用推理代理进行分析
             if ctx.deps.reasoning_agent:
                 logger.info("Calling Reasoning Agent for failure analysis...")
                 try:
@@ -329,16 +379,19 @@ if PYDANTIC_GRAPH_AVAILABLE:
                     logger.error(f"Reasoning Agent failed: {e}")
             
             # Retry without modification
+            # 不做修改直接重试
             return ExecuteStepNode()
     
     
     # Build workflow graph
+    # 构建工作流图
     layout_workflow_graph = Graph(
         nodes=[InitNode, ExecuteStepNode, VerifyStepNode, FailureAnalysisNode]
     )
 
 else:
     # Stubs when pydantic-graph is not available
+    # 当 pydantic-graph 不可用时的占位符
     layout_workflow_graph = None
     InitNode = None
     ExecuteStepNode = None
@@ -347,7 +400,7 @@ else:
 
 
 # ============================================================================
-# Workflow Runner
+# Workflow Runner / 工作流运行器
 # ============================================================================
 
 async def run_workflow(
@@ -357,14 +410,15 @@ async def run_workflow(
 ) -> str:
     """
     Run the workflow graph.
+    运行工作流图。
     
     Args:
-        design_dir: Design directory path
-        deps: Workflow dependencies
-        max_iterations: Maximum iterations to prevent infinite loops
+        design_dir: Design directory path / 设计目录路径
+        deps: Workflow dependencies / 工作流依赖项
+        max_iterations: Maximum iterations to prevent infinite loops / 最大迭代次数，防止无限循环
         
     Returns:
-        str: Final result message
+        str: Final result message / 最终结果消息
     """
     if not PYDANTIC_GRAPH_AVAILABLE:
         raise ImportError(
@@ -375,6 +429,7 @@ async def run_workflow(
     from ..state.workflow_manager import load_workflow_state
     
     # Load initial state
+    # 加载初始状态
     workflow_state = load_workflow_state(design_dir / "workflow_state.json")
     graph_state = LayoutWorkflowState.from_workflow_state(workflow_state)
     
@@ -382,6 +437,7 @@ async def run_workflow(
     logger.info(f"Progress: {sum(graph_state.completed)}/{len(graph_state.completed)} steps")
     
     # Run graph
+    # 运行图
     try:
         result = await layout_workflow_graph.run(
             InitNode(),

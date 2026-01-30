@@ -1,7 +1,9 @@
 """
 Layout Context - 布局上下文
+Layout Context - Layout context management
 
 管理整个布局过程的状态，包括PDK、组件、连接等信息
+Manages the state of the entire layout process, including PDK, components, connections, etc.
 """
 
 import os
@@ -13,12 +15,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-# 添加gLayout路径
+# 添加gLayout路径 / Add gLayout path
 _GLAYOUT_PATH = Path(__file__).parent.parent.parent / "gLayout" / "src"
 if str(_GLAYOUT_PATH) not in sys.path:
     sys.path.insert(0, str(_GLAYOUT_PATH))
 
-# 设置 PDK_ROOT 环境变量（glayout 初始化时需要）
+# 设置 PDK_ROOT 环境变量（glayout 初始化时需要） / Set PDK_ROOT environment variable (required for glayout initialization)
 _PDK_ROOT = Path(__file__).parent.parent.parent / "skywater-pdk"
 if _PDK_ROOT.exists() and not os.environ.get('PDK_ROOT'):
     os.environ['PDK_ROOT'] = str(_PDK_ROOT)
@@ -28,22 +30,22 @@ from .component_registry import ComponentRegistry, ComponentInfo
 
 
 class ContextState(Enum):
-    """上下文状态枚举"""
-    INITIALIZED = "initialized"
-    DESIGNING = "designing"
-    VERIFYING = "verifying"
-    COMPLETED = "completed"
-    ERROR = "error"
+    """上下文状态枚举 / Context state enumeration"""
+    INITIALIZED = "initialized"  # 已初始化 / Initialized
+    DESIGNING = "designing"      # 设计中 / Designing
+    VERIFYING = "verifying"      # 验证中 / Verifying
+    COMPLETED = "completed"      # 已完成 / Completed
+    ERROR = "error"              # 错误 / Error
 
 
 @dataclass
 class ComponentPlacement:
-    """组件放置信息"""
+    """组件放置信息 / Component placement information"""
     component_name: str
     x: float = 0.0
     y: float = 0.0
-    rotation: int = 0  # 旋转角度 (0, 90, 180, 270)
-    mirror: bool = False
+    rotation: int = 0  # 旋转角度 (0, 90, 180, 270) / Rotation angle
+    mirror: bool = False  # 镜像 / Mirror
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -57,17 +59,17 @@ class ComponentPlacement:
 
 @dataclass
 class Connection:
-    """连接信息"""
-    source: str           # 源端口 (格式: component_name.port_name)
-    target: str           # 目标端口
-    layer: str            # 路由层
-    route_type: str       # 路由类型 (smart/c/l/straight)
-    route_component: Optional[str] = None  # 路由组件名称
-    width: Optional[float] = None  # 路由宽度
+    """连接信息 / Connection information"""
+    source: str           # 源端口 (格式: component_name.port_name) / Source port
+    target: str           # 目标端口 / Target port
+    layer: str            # 路由层 / Routing layer
+    route_type: str       # 路由类型 (smart/c/l/straight) / Route type
+    route_component: Optional[str] = None  # 路由组件名称 / Route component name
+    width: Optional[float] = None  # 路由宽度 / Route width
     created_at: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """转换为字典 / Convert to dictionary"""
         return {
             "source": self.source,
             "target": self.target,
@@ -80,14 +82,15 @@ class Connection:
 
 
 class LayoutContext:
-    """布局上下文
+    """布局上下文 / Layout context
     
-    管理整个布局过程的状态，包括：
-    - PDK和设计规则
-    - 组件注册和管理
-    - 连接关系跟踪
-    - 顶层组件组装
-    - 历史记录和撤销
+    管理整个布局过程的状态，包括:
+    Manages the state of the entire layout process, including:
+    - PDK和设计规则 / PDK and design rules
+    - 组件注册和管理 / Component registration and management
+    - 连接关系跟踪 / Connection tracking
+    - 顶层组件组装 / Top-level component assembly
+    - 历史记录和撤销 / History and undo
     
     Usage:
         >>> context = LayoutContext(pdk_name="sky130")

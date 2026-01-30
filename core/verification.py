@@ -1,7 +1,9 @@
 """
 Verification Engine - 验证引擎
+Verification Engine - Design verification engine
 
 提供DRC（设计规则检查）和LVS（版图与原理图对比）功能
+Provides DRC (Design Rule Check) and LVS (Layout vs Schematic) functionality
 """
 
 import os
@@ -13,7 +15,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# 添加路径
+# 添加路径 / Add paths
 _BASE_PATH = Path(__file__).parent.parent
 if str(_BASE_PATH) not in sys.path:
     sys.path.insert(0, str(_BASE_PATH))
@@ -22,7 +24,7 @@ _GLAYOUT_PATH = _BASE_PATH.parent / "gLayout" / "src"
 if str(_GLAYOUT_PATH) not in sys.path:
     sys.path.insert(0, str(_GLAYOUT_PATH))
 
-# 设置 PDK_ROOT 环境变量（glayout 初始化时需要）
+# 设置 PDK_ROOT 环境变量（glayout 初始化时需要） / Set PDK_ROOT environment variable (required for glayout initialization)
 _PDK_ROOT = _BASE_PATH.parent / "skywater-pdk"
 if _PDK_ROOT.exists() and not os.environ.get('PDK_ROOT'):
     os.environ['PDK_ROOT'] = str(_PDK_ROOT)
@@ -35,12 +37,12 @@ from mcp_server.handlers.error_handler import (
 
 @dataclass
 class DRCViolation:
-    """DRC违规记录"""
-    rule: str                         # 违规规则名称
-    category: str                     # 违规类别
-    location: Tuple[float, float]     # 违规位置
-    description: str                  # 违规描述
-    severity: str = "error"           # 严重程度
+    """DRC违规记录 / DRC violation record"""
+    rule: str                         # 违规规则名称 / Violation rule name
+    category: str                     # 违规类别 / Violation category
+    location: Tuple[float, float]     # 违规位置 / Violation location
+    description: str                  # 违规描述 / Violation description
+    severity: str = "error"           # 严重程度 / Severity level
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -55,12 +57,12 @@ class DRCViolation:
 
 @dataclass
 class DRCResult:
-    """DRC检查结果"""
+    """DRC检查结果 / DRC check result"""
     passed: bool
     violations: List[DRCViolation]
     report_path: Optional[Path]
     checked_at: datetime = field(default_factory=datetime.now)
-    suggestions: List[Any] = field(default_factory=list)  # 修复建议列表
+    suggestions: List[Any] = field(default_factory=list)  # 修复建议列表 / Fix suggestion list
     
     @property
     def violation_count(self) -> int:

@@ -1,7 +1,9 @@
 """
 Logging configuration for Layout Agent Loop
+布局代理循环的日志配置
 
 Supports both Pydantic Logfire (for observability) and standard Python logging.
+支持 Pydantic Logfire（用于可观测性）和标准 Python 日志。
 """
 
 import logging
@@ -11,6 +13,7 @@ from typing import Optional
 from datetime import datetime
 
 # Try to import logfire (optional dependency)
+# 尝试导入 logfire（可选依赖）
 try:
     import logfire
     LOGFIRE_AVAILABLE = True
@@ -28,30 +31,32 @@ def setup_agent_logging(
 ) -> logging.Logger:
     """
     Configure logging for Layout Agent Loop.
+    为布局代理循环配置日志。
     
     Sets up:
-    - Console handler (INFO level by default)
-    - File handler (DEBUG level by default)
-    - Logfire integration (if available and enabled)
+    设置内容:
+    - Console handler (INFO level by default) / 控制台处理器（默认 INFO 级别）
+    - File handler (DEBUG level by default) / 文件处理器（默认 DEBUG 级别）
+    - Logfire integration (if available and enabled) / Logfire 集成（如果可用且已启用）
     
     Args:
-        project_name: Name for Logfire project
-        log_file: Path to log file (optional)
-        console_level: Log level for console output
-        file_level: Log level for file output
-        use_logfire: Whether to enable Logfire integration
+        project_name: Name for Logfire project / Logfire 项目名称
+        log_file: Path to log file (optional) / 日志文件路径（可选）
+        console_level: Log level for console output / 控制台输出的日志级别
+        file_level: Log level for file output / 文件输出的日志级别
+        use_logfire: Whether to enable Logfire integration / 是否启用 Logfire 集成
         
     Returns:
-        logging.Logger: Configured logger for layout_agent
+        logging.Logger: Configured logger for layout_agent / 已配置的 layout_agent 日志记录器
     """
-    # Create logger
+    # Create logger / 创建日志记录器
     logger = logging.getLogger("layout_agent")
     logger.setLevel(logging.DEBUG)
     
-    # Remove existing handlers
+    # Remove existing handlers / 移除现有处理器
     logger.handlers.clear()
     
-    # Create formatters
+    # Create formatters / 创建格式化器
     console_formatter = logging.Formatter(
         '%(asctime)s | %(levelname)-8s | %(message)s',
         datefmt='%H:%M:%S'
@@ -61,13 +66,13 @@ def setup_agent_logging(
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # Console handler
+    # Console handler / 控制台处理器
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(console_level)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
     
-    # File handler (if path provided)
+    # File handler (if path provided) / 文件处理器（如果提供了路径）
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -75,7 +80,7 @@ def setup_agent_logging(
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
     
-    # Logfire integration
+    # Logfire integration / Logfire 集成
     if use_logfire and LOGFIRE_AVAILABLE:
         try:
             logfire.configure(
@@ -83,6 +88,7 @@ def setup_agent_logging(
                 send_to_logfire='if-token-present'
             )
             # Instrument PydanticAI if available
+            # 如果 PydanticAI 可用则进行插桩
             logfire.instrument_pydantic_ai()
             logger.info(f"Logfire configured for project: {project_name}")
         except Exception as e:
@@ -94,12 +100,13 @@ def setup_agent_logging(
 def get_logger(name: str = "layout_agent") -> logging.Logger:
     """
     Get a logger instance.
+    获取日志记录器实例。
     
     Args:
-        name: Logger name (default: layout_agent)
+        name: Logger name (default: layout_agent) / 日志记录器名称（默认: layout_agent）
         
     Returns:
-        logging.Logger: Logger instance
+        logging.Logger: Logger instance / 日志记录器实例
     """
     return logging.getLogger(name)
 
@@ -115,15 +122,16 @@ def log_step_execution(
 ) -> None:
     """
     Log step execution with structured data.
+    使用结构化数据记录步骤执行。
     
     Args:
-        logger: Logger instance
-        step_id: Step ID
-        tool: Tool name
-        parameters: Tool parameters
-        success: Whether execution succeeded
-        result: Result data (if success)
-        error: Error message (if failed)
+        logger: Logger instance / 日志记录器实例
+        step_id: Step ID / 步骤 ID
+        tool: Tool name / 工具名称
+        parameters: Tool parameters / 工具参数
+        success: Whether execution succeeded / 执行是否成功
+        result: Result data (if success) / 结果数据（如果成功）
+        error: Error message (if failed) / 错误消息（如果失败）
     """
     if success:
         logger.info(
@@ -157,12 +165,13 @@ def log_workflow_event(
 ) -> None:
     """
     Log workflow lifecycle events.
+    记录工作流生命周期事件。
     
     Args:
-        logger: Logger instance
-        event: Event type (start, complete, error, etc.)
-        design_name: Design name
-        **kwargs: Additional event data
+        logger: Logger instance / 日志记录器实例
+        event: Event type (start, complete, error, etc.) / 事件类型（start, complete, error 等）
+        design_name: Design name / 设计名称
+        **kwargs: Additional event data / 额外的事件数据
     """
     logger.info(
         f"Workflow {event}: {design_name}",
@@ -175,7 +184,8 @@ def log_workflow_event(
 
 
 class WorkflowLogContext:
-    """Context manager for workflow logging with automatic timing."""
+    """Context manager for workflow logging with automatic timing.
+    工作流日志的上下文管理器，带自动计时功能。"""
     
     def __init__(self, logger: logging.Logger, workflow_name: str, step_id: Optional[int] = None):
         self.logger = logger
@@ -202,4 +212,4 @@ class WorkflowLogContext:
                 self.logger.info(f"Step {self.step_id} completed in {duration:.2f}s")
             else:
                 self.logger.info(f"Workflow {self.workflow_name} completed in {duration:.2f}s")
-        return False  # Don't suppress exceptions
+        return False  # Don't suppress exceptions / 不抑制异常

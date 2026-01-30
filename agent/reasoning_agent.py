@@ -1,14 +1,20 @@
 """Reasoning Agent for Layout Agent Loop
+布局代理循环的推理代理
 
 Uses deepseek-reasoner model to:
-1. Plan workflow from user instructions
-2. Analyze failures and suggest fixes
+使用 deepseek-reasoner 模型来:
+1. Plan workflow from user instructions / 根据用户指令规划工作流
+2. Analyze failures and suggest fixes / 分析失败并建议修复方案
 
 All outputs use PydanticAI structured output for type safety.
+所有输出使用 PydanticAI 结构化输出以确保类型安全。
 
 Agent Constitution Integration:
+代理宪法集成:
 - AGENT_CONSTITUTION.md is automatically loaded and injected into system prompts
+- AGENT_CONSTITUTION.md 自动加载并注入系统提示词
 - This ensures all planning decisions comply with constitutional rules
+- 这确保所有规划决策都符合宪法规则
 """
 
 import os
@@ -26,24 +32,27 @@ from pydantic_ai.providers.openai import OpenAIProvider
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# Constitution Loading
+# Constitution Loading / 宪法加载
 # ============================================================================
 
-# Path to AGENT_CONSTITUTION.md
+# Path to AGENT_CONSTITUTION.md / AGENT_CONSTITUTION.md 的路径
 CONSTITUTION_PATH = Path(__file__).parent / "AGENT_CONSTITUTION.md"
 
-# Cache for constitution content
+# Cache for constitution content / 宪法内容缓存
 _constitution_cache: Optional[str] = None
 
 
 def load_constitution() -> str:
     """
     Load AGENT_CONSTITUTION.md content.
+    加载 AGENT_CONSTITUTION.md 内容。
     
     Uses module-level cache to avoid repeated file reads.
+    使用模块级缓存以避免重复读取文件。
     
     Returns:
         Constitution content as string, empty string if file not found
+        宪法内容字符串，如果文件未找到则返回空字符串
     """
     global _constitution_cache
     
@@ -62,12 +71,14 @@ def load_constitution() -> str:
 
 # ============================================================================
 # Output Schemas (Pydantic models for structured output)
+# 输出模式（用于结构化输出的 Pydantic 模型）
 # ============================================================================
 
 class StepDefinitionOutput(BaseModel):
-    """Single step output format from Reasoning Agent"""
+    """Single step output format from Reasoning Agent
+    推理代理的单步输出格式"""
     step_id: int
-    category: str  # device-creation, placement-layout, routing-connection, verification-drc, export-query
+    category: str  # device-creation, placement-layout, routing-connection, verification-drc, export-query / 设备创建、布局置放、路由连接、验证DRC、导出查询
     description: str
     skill: str = ""
     tool: str
@@ -80,13 +91,15 @@ class StepDefinitionOutput(BaseModel):
 
 
 class WorkflowPlanOutput(BaseModel):
-    """Complete workflow plan output from Reasoning Agent"""
+    """Complete workflow plan output from Reasoning Agent
+    推理代理的完整工作流计划输出"""
     design_name: str
     pdk: str
     steps: list[StepDefinitionOutput]
     
     def to_workflow_state_dict(self) -> dict:
-        """Convert to workflow_state.json format"""
+        """Convert to workflow_state.json format
+        转换为 workflow_state.json 格式"""
         return {
             "design_name": self.design_name,
             "pdk": self.pdk,
@@ -96,7 +109,8 @@ class WorkflowPlanOutput(BaseModel):
 
 
 class FailureAnalysisOutput(BaseModel):
-    """Failure analysis output from Reasoning Agent"""
+    """Failure analysis output from Reasoning Agent
+    推理代理的失败分析输出"""
     recoverable: bool
     analysis: str
     modified_step: Optional[dict] = None
@@ -104,7 +118,7 @@ class FailureAnalysisOutput(BaseModel):
 
 
 # ============================================================================
-# Prompts
+# Prompts / 提示词
 # ============================================================================
 
 PLANNING_PROMPT = """# Analog Layout Reasoning Agent - Workflow Planner
@@ -225,15 +239,16 @@ For non-recoverable errors:
 
 
 # ============================================================================
-# Reasoning Agent Class
+# Reasoning Agent Class / 推理代理类
 # ============================================================================
 
 class ReasoningAgent:
     """
     Reasoning Agent using deepseek-reasoner model with structured output.
+    使用 deepseek-reasoner 模型的推理代理，支持结构化输出。
     
-    Responsibilities:
-    1. Plan workflow from user instructions
+    Responsibilities / 职责:
+    1. Plan workflow from user instructions / 根据用户指令规划工作流
     2. Analyze failures and suggest fixes
     
     宪法注入: 完整宪法在 __init__ 时注入到 system_prompt

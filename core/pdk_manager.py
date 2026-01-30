@@ -1,7 +1,9 @@
 """
 PDK Manager - 统一PDK管理器
+PDK Manager - Unified PDK Manager
 
 支持sky130、gf180、ihp130三种开源PDK的统一管理
+Supports unified management of three open-source PDKs: sky130, gf180, ihp130
 """
 
 import os
@@ -10,22 +12,25 @@ import importlib
 from pathlib import Path
 from typing import Optional, Dict, Any, List, ClassVar
 
-# 添加gLayout路径到sys.path
+# 添加gLayout路径到sys.path / Add gLayout path to sys.path
 _GLAYOUT_PATH = Path(__file__).parent.parent.parent / "gLayout" / "src"
 if str(_GLAYOUT_PATH) not in sys.path:
     sys.path.insert(0, str(_GLAYOUT_PATH))
 
-# 自动设置 PDK_ROOT 环境变量（glayout 初始化时需要）
+# 自动设置 PDK_ROOT 环境变量（glayout 初始化时需要） / Auto-set PDK_ROOT environment variable (required for glayout initialization)
 _PDK_ROOT = Path(__file__).parent.parent.parent / "skywater-pdk"
 if _PDK_ROOT.exists() and not os.environ.get('PDK_ROOT'):
     os.environ['PDK_ROOT'] = str(_PDK_ROOT)
 
 
 class PDKManager:
-    """统一PDK管理器
+    """统一PDK管理器 / Unified PDK Manager
     
     负责加载、切换和管理不同的PDK（Process Design Kit）。
+    Responsible for loading, switching, and managing different PDKs.
+    
     支持sky130、gf180、ihp130三种开源工艺。
+    Supports three open-source processes: sky130, gf180, ihp130.
     
     Usage:
         >>> pdk = PDKManager.load_pdk("sky130")
@@ -33,7 +38,7 @@ class PDKManager:
         >>> layers = PDKManager.get_layer_mapping()
     """
     
-    # PDK配置信息
+    # PDK配置信息 / PDK configuration information
     PDK_CONFIG: ClassVar[Dict[str, Dict[str, Any]]] = {
         "sky130": {
             "module": "glayout.pdk.sky130_mapped.sky130_mapped",
@@ -88,7 +93,7 @@ class PDKManager:
                 "pfet_l": 0.13,
             },
             "drc_tool": "klayout",
-            "lvs_tool": None,  # 暂不支持LVS
+            "lvs_tool": None,  # 暂不支持LVS / LVS not yet supported
             "models": {
                 "nfet": "sg13_lv_nmos",
                 "pfet": "sg13_lv_pmos",
@@ -97,7 +102,7 @@ class PDKManager:
         }
     }
     
-    # 类变量：当前激活的PDK
+    # 类变量：当前激活的PDK / Class variable: currently active PDK
     _active_pdk_name: ClassVar[Optional[str]] = None
     _pdk_instance: ClassVar[Optional[Any]] = None
     

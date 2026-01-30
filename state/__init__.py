@@ -1,10 +1,12 @@
 """
 State management module for Layout Agent Loop
+布局代理循环的状态管理模块
 
 This module provides:
-- WorkflowState: Workflow state data model
-- StepDefinition: Step definition data model
-- LayoutWorkflowState: State class for pydantic-graph
+本模块提供:
+- WorkflowState: Workflow state data model / 工作流状态数据模型
+- StepDefinition: Step definition data model / 步骤定义数据模型
+- LayoutWorkflowState: State class for pydantic-graph / 用于 pydantic-graph 的状态类
 """
 
 from .models import (
