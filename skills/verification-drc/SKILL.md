@@ -24,11 +24,11 @@ description: 设计规则验证：执行DRC检查、提取网表、获取修复�
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 参数 |
+| 脚本路径 | 说明 | 参数 |
 |--------|------|------|
-| `run_drc` | 执行DRC检查 | 无 |
-| `extract_netlist` | 提取版图网表 | 无 |
-| `get_drc_fix_suggestions` | 获取DRC修复建议 | 无 |
+| `scripts/run_drc.py` | 执行DRC检查 | 无 |
+| `scripts/extract_netlist.py` | 提取版图网表 | 无 |
+| `scripts/get_drc_fix_suggestions.py` | 获取DRC修复建议 | 无 |
 
 ## DRC检查内容
 
@@ -57,7 +57,7 @@ description: 设计规则验证：执行DRC检查、提取网表、获取修复�
 ```
 run_skill_script(
     skill_name="verification-drc",
-    script_name="run_drc",
+    script_name="scripts/run_drc.py",
     args=[]
 )
 ```
@@ -84,7 +84,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="verification-drc",
-    script_name="get_drc_fix_suggestions",
+    script_name="scripts/get_drc_fix_suggestions.py",
     args=[]
 )
 ```
@@ -111,7 +111,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="verification-drc",
-    script_name="extract_netlist",
+    script_name="scripts/extract_netlist.py",
     args=[]
 )
 ```

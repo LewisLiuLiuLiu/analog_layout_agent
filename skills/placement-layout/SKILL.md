@@ -24,12 +24,12 @@ description: 组件放置与布局：支持绝对/相对放置、端口对齐、
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 必需参数 | 可选参数 |
+| 脚本路径 | 说明 | 必需参数 | 可选参数 |
 |--------|------|----------|----------|
-| `place_component` | 放置组件到指定位置 | `--name`, `--x`, `--y` | `--rotation` |
-| `move_component` | 移动组件 | `--name`, `--dx`, `--dy` | - |
-| `align_to_port` | 对齐到端口 | `--name`, `--target-port` | `--alignment`, `--offset-x`, `--offset-y` |
-| `interdigitize` | 互指式放置 | `--comp-a`, `--comp-b` | `--num-cols`, `--layout-style` |
+| `scripts/place_component.py` | 放置组件到指定位置 | `--name`, `--x`, `--y` | `--rotation` |
+| `scripts/move_component.py` | 移动组件 | `--name`, `--dx`, `--dy` | - |
+| `scripts/align_to_port.py` | 对齐到端口 | `--name`, `--target-port` | `--alignment`, `--offset-x`, `--offset-y` |
+| `scripts/interdigitize.py` | 互指式放置 | `--comp-a`, `--comp-b` | `--num-cols`, `--layout-style` |
 
 ## 放置策略
 
@@ -56,7 +56,7 @@ description: 组件放置与布局：支持绝对/相对放置、端口对齐、
 ```
 run_skill_script(
     skill_name="placement-layout",
-    script_name="place_component",
+    script_name="scripts/place_component.py",
     args=["--name", "M1", "--x", "10.0", "--y", "20.0"]
 )
 ```
@@ -68,7 +68,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="placement-layout",
-    script_name="align_to_port",
+    script_name="scripts/align_to_port.py",
     args=["--name", "M2", "--target-port", "M1.gate_E", "--alignment", "center"]
 )
 ```
@@ -80,7 +80,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="placement-layout",
-    script_name="interdigitize",
+    script_name="scripts/interdigitize.py",
     args=["--comp-a", "M_ref", "--comp-b", "M_out", "--num-cols", "4", "--layout-style", "ABAB"]
 )
 ```
@@ -92,7 +92,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="placement-layout",
-    script_name="move_component",
+    script_name="scripts/move_component.py",
     args=["--name", "M3", "--dx", "5.0", "--dy", "0.0"]
 )
 ```

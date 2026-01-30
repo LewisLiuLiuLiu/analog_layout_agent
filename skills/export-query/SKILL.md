@@ -23,12 +23,12 @@ description: 导出与查询：导出GDS文件、查询组件列表、获取组�
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 必需参数 | 可选参数 |
+| 脚本路径 | 说明 | 必需参数 | 可选参数 |
 |--------|------|----------|----------|
-| `export_gds` | 导出GDS文件 | `--output` | `--top-cell` |
-| `list_components` | 列出组件 | 无 | `--type` |
-| `get_component_info` | 获取组件信息 | `--name` | - |
-| `get_context_status` | 获取设计状态 | 无 | - |
+| `scripts/export_gds.py` | 导出GDS文件 | `--output` | `--top-cell` |
+| `scripts/list_components.py` | 列出组件 | 无 | `--type` |
+| `scripts/get_component_info.py` | 获取组件信息 | `--name` | - |
+| `scripts/get_context_status.py` | 获取设计状态 | 无 | - |
 
 ## GDS导出
 
@@ -44,7 +44,7 @@ description: 导出与查询：导出GDS文件、查询组件列表、获取组�
 ```
 run_skill_script(
     skill_name="export-query",
-    script_name="export_gds",
+    script_name="scripts/export_gds.py",
     args=["--output", "./output/my_design.gds"]
 )
 ```
@@ -67,7 +67,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="export-query",
-    script_name="list_components",
+    script_name="scripts/list_components.py",
     args=[]
 )
 ```
@@ -91,7 +91,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="export-query",
-    script_name="list_components",
+    script_name="scripts/list_components.py",
     args=["--type", "nmos"]
 )
 ```
@@ -101,7 +101,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="export-query",
-    script_name="get_component_info",
+    script_name="scripts/get_component_info.py",
     args=["--name", "M1"]
 )
 ```
@@ -135,7 +135,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="export-query",
-    script_name="get_context_status",
+    script_name="scripts/get_context_status.py",
     args=[]
 )
 ```

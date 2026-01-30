@@ -1,11 +1,13 @@
 """
-Agent module - Agent编排层
+Agent module - Agent orchestration layer
 
-包含Agent主类、任务规划器、Prompt模板等
-支持 PydanticAI 框架（主要）和 OpenAI Agent SDK（已废弃）
+Contains Agent classes, task planners, prompt templates.
+Supports PydanticAI framework (primary) and OpenAI Agent SDK (deprecated).
+
+New: Agent Loop for Reasoning-Execution workflow
 """
 
-# 原有模块导入（可选，如果 layout_agent.py 存在）
+# Original module imports (optional, if layout_agent.py exists)
 try:
     from .layout_agent import AnalogLayoutAgent, TaskPlanner, ToolExecutor, Task, TaskStatus
     _LAYOUT_AGENT_AVAILABLE = True
@@ -27,7 +29,7 @@ from .prompt_templates import (
     format_result_for_llm,
 )
 
-# PydanticAI 集成（推荐使用）
+# PydanticAI integration (recommended)
 from .pydantic_agent import (
     create_layout_agent,
     run_layout_agent,
@@ -36,8 +38,35 @@ from .pydantic_agent import (
     LayoutAgentDeps,
 )
 
-# OpenAI Agent SDK 集成（已废弃，保留向后兼容）
-# 注意：推荐使用 pydantic_agent 中的实现
+# Agent Loop (new - Reasoning-Execution workflow)
+from .agent_loop import (
+    AgentLoop,
+    DRCStrategy,
+    run_layout_agent_loop,
+    run_layout_agent_loop_sync,
+)
+
+from .reasoning_agent import (
+    ReasoningAgent,
+    WorkflowPlanOutput,
+    FailureAnalysisOutput,
+    load_available_skills,
+)
+
+from .step_executor import (
+    StepExecutor,
+    ExecutionContext,
+)
+
+from .logging_config import (
+    setup_agent_logging,
+    get_logger,
+    log_step_execution,
+    log_workflow_event,
+    WorkflowLogContext,
+)
+
+# OpenAI Agent SDK integration (deprecated, kept for backward compatibility)
 try:
     from .openai_agent import (
         create_layout_agent as create_layout_agent_openai,
@@ -52,7 +81,7 @@ except ImportError:
     run_layout_agent_openai = None
 
 __all__ = [
-    # 原有导出
+    # Original exports
     "AnalogLayoutAgent",
     "TaskPlanner",
     "ToolExecutor",
@@ -65,13 +94,29 @@ __all__ = [
     "get_tool_example",
     "format_context_for_llm",
     "format_result_for_llm",
-    # PydanticAI 集成（推荐）
+    # PydanticAI integration (recommended)
     "create_layout_agent",
     "run_layout_agent",
     "run_layout_agent_sync",
     "run_layout_agent_stream",
     "LayoutAgentDeps",
-    # OpenAI Agent SDK 集成（已废弃）
+    # Agent Loop (new)
+    "AgentLoop",
+    "DRCStrategy",
+    "run_layout_agent_loop",
+    "run_layout_agent_loop_sync",
+    "ReasoningAgent",
+    "WorkflowPlanOutput",
+    "FailureAnalysisOutput",
+    "load_available_skills",
+    "StepExecutor",
+    "ExecutionContext",
+    "setup_agent_logging",
+    "get_logger",
+    "log_step_execution",
+    "log_workflow_event",
+    "WorkflowLogContext",
+    # OpenAI Agent SDK integration (deprecated)
     "LayoutAgentContext",
     "create_layout_agent_openai",
     "run_layout_agent_openai",

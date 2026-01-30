@@ -23,12 +23,12 @@ description: 智能布线连接：支持smart_route自动寻路、c_route/l_rout
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 必需参数 | 可选参数 |
+| 脚本路径 | 说明 | 必需参数 | 可选参数 |
 |--------|------|----------|----------|
-| `smart_route` | 智能自动布线 | `--source`, `--target` | `--layer`, `--width`, `--via-spacing` |
-| `c_route` | C形布线 | `--source`, `--target` | `--layer`, `--width`, `--extension` |
-| `l_route` | L形布线 | `--source`, `--target` | `--layer`, `--width` |
-| `straight_route` | 直连布线 | `--source`, `--target` | `--layer`, `--width` |
+| `scripts/smart_route.py` | 智能自动布线 | `--source`, `--target` | `--layer`, `--width`, `--via-spacing` |
+| `scripts/c_route.py` | C形布线 | `--source`, `--target` | `--layer`, `--width`, `--extension` |
+| `scripts/l_route.py` | L形布线 | `--source`, `--target` | `--layer`, `--width` |
+| `scripts/straight_route.py` | 直连布线 | `--source`, `--target` | `--layer`, `--width` |
 
 ## 端口命名规则
 
@@ -64,7 +64,7 @@ description: 智能布线连接：支持smart_route自动寻路、c_route/l_rout
 ```
 run_skill_script(
     skill_name="routing-connection",
-    script_name="smart_route",
+    script_name="scripts/smart_route.py",
     args=["--source", "M1.drain_N", "--target", "M2.drain_S"]
 )
 ```
@@ -76,7 +76,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="routing-connection",
-    script_name="smart_route",
+    script_name="scripts/smart_route.py",
     args=["--source", "M1.gate_E", "--target", "M2.gate_W", "--layer", "met2"]
 )
 ```
@@ -88,7 +88,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="routing-connection",
-    script_name="l_route",
+    script_name="scripts/l_route.py",
     args=["--source", "M1.drain_N", "--target", "R1.port_a"]
 )
 ```
@@ -100,7 +100,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="routing-connection",
-    script_name="c_route",
+    script_name="scripts/c_route.py",
     args=["--source", "M1.source_S", "--target", "M3.source_S", "--extension", "5.0"]
 )
 ```

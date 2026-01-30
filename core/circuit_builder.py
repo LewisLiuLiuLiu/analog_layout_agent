@@ -53,6 +53,13 @@ class CircuitBuilder:
         >>> result = builder.build_diff_pair(device_type="nmos", width=5.0)
     """
     
+    # 端口过滤配置：主要功能端口关键字
+    PRIMARY_PORT_KEYWORDS = ['drain', 'gate', 'source', 'well', 'bulk', 'inp', 'inm', 'out', 'vdd', 'vss', 'plus', 'minus', 'ref', 'mirror', 'tail']
+    # 排除的内部结构关键字
+    EXCLUDE_KEYWORDS = ['dummy', 'via', 'bottom', 'top_met', 'gsdcon', 'layer', 'con_', 'tie_', 'multiplier_']
+    # 最大返回端口数
+    MAX_PORTS_RETURN = 30
+    
     def __init__(self, context: LayoutContext):
         """初始化构建器
         
@@ -98,6 +105,39 @@ class CircuitBuilder:
             raise DeviceError(
                 "PDK未初始化，请先设置PDK"
             )
+        
+    def _filter_ports(self, all_ports: list) -> dict:
+        """过滤端口列表，只返回主要功能端口
+            
+        Args:
+            all_ports: 完整的端口列表
+                
+        Returns:
+            包含过滤后端口和统计信息的字典
+        """
+        filtered = []
+        for port in all_ports:
+            port_lower = port.lower()
+            # 必须包含主要功能关键字
+            has_main = any(kw in port_lower for kw in self.PRIMARY_PORT_KEYWORDS)
+            # 不能包含内部结构关键字
+            has_exclude = any(kw in port_lower for kw in self.EXCLUDE_KEYWORDS)
+                
+            if has_main and not has_exclude:
+                filtered.append(port)
+            
+        # 如果过滤后为空，返回前N个原始端口
+        if not filtered:
+            filtered = all_ports[:self.MAX_PORTS_RETURN]
+        # 如果过滤后仍然太多，截断
+        elif len(filtered) > self.MAX_PORTS_RETURN:
+            filtered = filtered[:self.MAX_PORTS_RETURN]
+            
+        return {
+            "ports": filtered,
+            "total_ports": len(all_ports),
+            "filtered": len(all_ports) != len(filtered)
+        }
     
     def build_current_mirror(
         self,
@@ -189,7 +229,7 @@ class CircuitBuilder:
                     "length": length,
                     "numcols": numcols
                 },
-                "ports": list(comp.ports.keys()),
+                **self._filter_ports(list(comp.ports.keys())),
                 "bbox": {
                     "width": float(comp.xsize),
                     "height": float(comp.ysize)
@@ -305,7 +345,7 @@ class CircuitBuilder:
                     "numcols": numcols,
                     "layout_style": layout_style
                 },
-                "ports": list(comp.ports.keys()),
+                **self._filter_ports(list(comp.ports.keys())),
                 "bbox": {
                     "width": float(comp.xsize),
                     "height": float(comp.ysize)
@@ -398,7 +438,7 @@ class CircuitBuilder:
                     "load_w": load_w,
                     "bias_current": bias_current
                 },
-                "ports": list(comp.ports.keys()),
+                **self._filter_ports(list(comp.ports.keys())),
                 "bbox": {
                     "width": float(comp.xsize),
                     "height": float(comp.ysize)
@@ -495,7 +535,7 @@ class CircuitBuilder:
                     "load_w": load_w,
                     "bias_current": bias_current
                 },
-                "ports": list(comp.ports.keys()),
+                **self._filter_ports(list(comp.ports.keys())),
                 "bbox": {
                     "width": float(comp.xsize),
                     "height": float(comp.ysize)

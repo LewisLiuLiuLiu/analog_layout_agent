@@ -12,6 +12,7 @@ shapely>=2.0.0
 
 # PydanticAI Framework (replacing OpenAI Agent SDK)
 pydantic-ai-slim>=1.47.0
+pydantic-graph>=0.1.0  # Workflow state machine
 openai>=2.11.0
 
 # OpenAI Agent SDK (deprecated, kept for reference)

@@ -138,7 +138,11 @@ class RoutingToolExecutor:
             )
         
         try:
-            from glayout import smart_route
+            # 导入路由函数和端口工具
+            from glayout.routing.L_route import L_route
+            from glayout.routing.c_route import c_route
+            from glayout.routing.straight_route import straight_route
+            from glayout.util.port_utils import ports_parallel, ports_inline
             
             pdk = self._get_pdk()
             
@@ -146,18 +150,52 @@ class RoutingToolExecutor:
             port1 = self._resolve_port(source_port)
             port2 = self._resolve_port(dest_port)
             
-            # 执行路由
-            route_kwargs = {
-                "pdk": pdk,
-                "edge1": port1,
-                "edge2": port2,
-                "glayer": layer
-            }
-            
-            if width:
-                route_kwargs["width"] = width
-            
-            comp = smart_route(**route_kwargs, **kwargs)
+            # 根据端口方向选择路由类型，并传递正确的层参数
+            # 逻辑与 gLayout smart_route.py 第 47-54 行保持一致
+            if ports_parallel(port1, port2):
+                # 端口方向平行
+                if ports_inline(port1, port2) or (port1.orientation != port2.orientation):
+                    # 使用 straight_route
+                    route_kwargs = {
+                        "pdk": pdk,
+                        "edge1": port1,
+                        "edge2": port2
+                    }
+                    if layer:
+                        route_kwargs["glayer1"] = layer
+                        route_kwargs["glayer2"] = layer
+                    if width is not None:
+                        route_kwargs["width"] = width
+                    comp = straight_route(**route_kwargs)
+                    actual_route_type = "straight"
+                else:
+                    # 使用 c_route
+                    route_kwargs = {
+                        "pdk": pdk,
+                        "edge1": port1,
+                        "edge2": port2
+                    }
+                    if layer:
+                        route_kwargs["cglayer"] = layer
+                    if width is not None:
+                        route_kwargs["cwidth"] = width
+                    comp = c_route(**route_kwargs)
+                    actual_route_type = "c"
+            else:
+                # 端口方向垂直，使用 L_route
+                route_kwargs = {
+                    "pdk": pdk,
+                    "edge1": port1,
+                    "edge2": port2
+                }
+                if layer:
+                    route_kwargs["hglayer"] = layer
+                    route_kwargs["vglayer"] = layer
+                if width is not None:
+                    route_kwargs["hwidth"] = width
+                    route_kwargs["vwidth"] = width
+                comp = L_route(**route_kwargs)
+                actual_route_type = "l"
             
             # 注册路由组件
             registered_name = self.context.register_component(
@@ -167,7 +205,7 @@ class RoutingToolExecutor:
                     "source_port": source_port,
                     "dest_port": dest_port,
                     "layer": layer,
-                    "route_type": "smart"
+                    "route_type": actual_route_type
                 },
                 name=name,
                 prefix="route"
@@ -178,7 +216,7 @@ class RoutingToolExecutor:
                 source=source_port,
                 target=dest_port,
                 layer=layer,
-                route_type="smart",
+                route_type=actual_route_type,
                 route_component=registered_name,
                 width=width
             )
@@ -186,7 +224,7 @@ class RoutingToolExecutor:
             return {
                 "success": True,
                 "component_name": registered_name,
-                "route_type": "smart",
+                "route_type": actual_route_type,
                 "source": source_port,
                 "target": dest_port,
                 "layer": layer,

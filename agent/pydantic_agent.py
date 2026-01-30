@@ -71,7 +71,7 @@ def create_layout_agent(
     model_name: str = "deepseek-reasoner",
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
-    use_skills: bool = True
+    use_skills: bool = False
 ) -> Tuple[Agent[LayoutAgentDeps, str], Optional[Any]]:
     """创建 Layout Agent 实例
     
@@ -674,7 +674,7 @@ async def run_layout_agent(
     model: str = "deepseek-chat",
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
-    use_skills: bool = True
+    use_skills: bool = False
 ) -> Dict[str, Any]:
     """运行 Layout Agent 处理用户指令
     
@@ -770,7 +770,7 @@ async def run_layout_agent_stream(
     instruction: str,
     pdk: str = "sky130",
     design_name: str = "top_level",
-    model: str = "deepseek-reasoner",
+    model: str = "deepseek-chat",
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     on_text: Optional[callable] = None,

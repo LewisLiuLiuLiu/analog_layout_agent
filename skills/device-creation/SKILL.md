@@ -23,13 +23,13 @@ description: 创建基础模拟器件：NMOS、PMOS、MIM电容、多晶硅电�
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 必需参数 | 可选参数 |
+| 脚本路径 | 说明 | 必需参数 | 可选参数 |
 |--------|------|----------|----------|
-| `create_nmos` | 创建NMOS晶体管 | `--width` | `--length`, `--fingers`, `--multiplier`, `--with-dummy`, `--with-tie`, `--name` |
-| `create_pmos` | 创建PMOS晶体管 | `--width` | `--length`, `--fingers`, `--multiplier`, `--with-dummy`, `--with-tie`, `--name` |
-| `create_mimcap` | 创建MIM电容 | `--width`, `--length` | `--name` |
-| `create_resistor` | 创建多晶硅电阻 | `--width`, `--length` | `--num-series`, `--name` |
-| `create_via_stack` | 创建层间Via堆叠 | `--from-layer`, `--to-layer` | `--size`, `--name` |
+| `scripts/create_nmos.py` | 创建NMOS晶体管 | `--width` | `--length`, `--fingers`, `--multiplier`, `--with-dummy`, `--with-tie`, `--name` |
+| `scripts/create_pmos.py` | 创建PMOS晶体管 | `--width` | `--length`, `--fingers`, `--multiplier`, `--with-dummy`, `--with-tie`, `--name` |
+| `scripts/create_mimcap.py` | 创建MIM电容 | `--width`, `--length` | `--name` |
+| `scripts/create_resistor.py` | 创建多晶硅电阻 | `--width`, `--length` | `--num-series`, `--name` |
+| `scripts/create_via_stack.py` | 创建层间Via堆叠 | `--from-layer`, `--to-layer` | `--size`, `--name` |
 
 ## 关键参数说明
 
@@ -79,7 +79,7 @@ description: 创建基础模拟器件：NMOS、PMOS、MIM电容、多晶硅电�
 ```
 run_skill_script(
     skill_name="device-creation",
-    script_name="create_nmos",
+    script_name="scripts/create_nmos.py",
     args=["--width", "3.0", "--fingers", "4", "--with-dummy"]
 )
 ```
@@ -92,14 +92,14 @@ run_skill_script(
 # 参考管（1倍）
 run_skill_script(
     skill_name="device-creation",
-    script_name="create_nmos",
+    script_name="scripts/create_nmos.py",
     args=["--width", "2.0", "--multiplier", "1", "--with-dummy", "--name", "M_ref"]
 )
 
 # 输出管（4倍）
 run_skill_script(
     skill_name="device-creation",
-    script_name="create_nmos",
+    script_name="scripts/create_nmos.py",
     args=["--width", "2.0", "--multiplier", "4", "--with-dummy", "--name", "M_out"]
 )
 ```
@@ -111,7 +111,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="device-creation",
-    script_name="create_mimcap",
+    script_name="scripts/create_mimcap.py",
     args=["--width", "10.0", "--length", "10.0", "--name", "Cc"]
 )
 ```

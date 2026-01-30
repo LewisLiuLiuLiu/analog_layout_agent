@@ -60,6 +60,17 @@ SYSTEM_PROMPT = """你是一个专业的模拟集成电路版图设计助手(Ana
 - 创建的组件信息（名称、端口列表、尺寸）
 - DRC状态（如适用）
 - 下一步建议
+
+## Skills 模式重要约束
+使用 run_skill_script 时，只能调用以下脚本：
+- device-creation: scripts/create_nmos.py, scripts/create_pmos.py, ...
+- export-query: scripts/export_gds.py, scripts/list_components.py, ...
+不得臆造或推断不存在的脚本名称！
+再强调一遍！
+使用 run_skill_script 时，只能调用以下脚本：
+- device-creation: scripts/create_nmos.py, scripts/create_pmos.py, ...
+- export-query: scripts/export_gds.py, scripts/list_components.py, ...
+不得臆造或推断不存在的脚本名称！
 """
 
 

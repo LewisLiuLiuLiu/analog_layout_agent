@@ -448,10 +448,14 @@ class LayoutContext:
         # 创建顶层组件
         top = Component(self.design_name)
         
+        # 收集所有需要添加的组件（包括路由组件）
+        added_components = set()
+        
         # 添加所有已注册的组件，并应用放置信息
         for name, info in self.registry:
             if info.component is not None:
                 ref = top.add_ref(info.component, alias=name)
+                added_components.add(name)
                 
                 # 应用放置信息
                 placement = self._placements.get(name)
@@ -467,29 +471,16 @@ class LayoutContext:
                     if placement.mirror:
                         ref.mirror()
         
-        # 应用连接（添加路由组件）
-        added_routes = set()  # 避免重复添加
+        # 检查连接中的路由组件（仅报告警告，不重复添加）
         for conn in self._connections:
-            if conn.route_component and conn.route_component not in added_routes:
-                route_info = self.registry.get_info(conn.route_component)
-                if route_info and route_info.component is not None:
-                    route_ref = top.add_ref(route_info.component, alias=conn.route_component)
-                    
-                    # 应用路由组件的放置信息
-                    route_placement = self._placements.get(conn.route_component)
-                    if route_placement:
-                        route_ref.move((route_placement.x, route_placement.y))
-                        if route_placement.rotation != 0:
-                            route_ref.rotate(route_placement.rotation)
-                    
-                    added_routes.add(conn.route_component)
-                else:
-                    # 路由组件不存在，记录警告
-                    import logging
-                    logging.warning(
-                        f"路由组件 '{conn.route_component}' 未找到，"
-                        f"连接 {conn.source} -> {conn.target} 未应用路由"
-                    )
+            if conn.route_component and conn.route_component not in added_components:
+                # 路由组件应该已经在 registry 中被注册并添加了
+                # 如果到这里说明有问题，记录警告
+                import logging
+                logging.warning(
+                    f"路由组件 '{conn.route_component}' 未在 registry 中找到，"
+                    f"连接 {conn.source} -> {conn.target} 未应用路由"
+                )
         
         self._top_level = top
         self._top_level_dirty = False

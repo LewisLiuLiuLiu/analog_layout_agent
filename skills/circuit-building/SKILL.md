@@ -27,10 +27,10 @@ description: 复合电路构建：一键创建电流镜、差分对等常用模�
 
 ## 可用脚本
 
-| 脚本名 | 说明 | 必需参数 | 可选参数 |
+| 脚本路径 | 说明 | 必需参数 | 可选参数 |
 |--------|------|----------|----------|
-| `create_current_mirror` | 创建电流镜 | `--width`, `--ratio` | `--length`, `--fingers`, `--type`, `--name` |
-| `create_diff_pair` | 创建差分对 | `--width` | `--length`, `--fingers`, `--tail-width`, `--name` |
+| `scripts/create_current_mirror.py` | 创建电流镜 | `--width`, `--ratio` | `--length`, `--fingers`, `--type`, `--name` |
+| `scripts/create_diff_pair.py` | 创建差分对 | `--width` | `--length`, `--fingers`, `--tail-width`, `--name` |
 
 ## 电流镜参数
 
@@ -78,7 +78,7 @@ description: 复合电路构建：一键创建电流镜、差分对等常用模�
 ```
 run_skill_script(
     skill_name="circuit-building",
-    script_name="create_current_mirror",
+    script_name="scripts/create_current_mirror.py",
     args=["--width", "2.0", "--ratio", "4", "--fingers", "2", "--name", "CM1"]
 )
 ```
@@ -88,7 +88,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="circuit-building",
-    script_name="create_current_mirror",
+    script_name="scripts/create_current_mirror.py",
     args=["--width", "4.0", "--ratio", "2", "--type", "pmos", "--name", "CM_load"]
 )
 ```
@@ -98,7 +98,7 @@ run_skill_script(
 ```
 run_skill_script(
     skill_name="circuit-building",
-    script_name="create_diff_pair",
+    script_name="scripts/create_diff_pair.py",
     args=["--width", "10.0", "--fingers", "4", "--tail-width", "20.0", "--name", "DP1"]
 )
 ```
