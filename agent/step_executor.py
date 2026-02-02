@@ -421,14 +421,25 @@ class StepExecutor:
         # 需要同时检查顶层和嵌套结构
         data = result.get("data", {})
         
+        # 修复：适配 DRCResult.to_dict() 的字段名
+        # DRCResult 返回 "passed"，而非 "drc_clean" 或 "clean"
         drc_clean = (
-            result.get("drc_clean") or 
+            result.get("passed") or           # DRCResult 字段
+            result.get("drc_clean") or        # 兼容旧格式
             result.get("clean", False) or
+            data.get("passed") or             # DRCResult 嵌套字段
             data.get("drc_clean") or
             data.get("clean", False)
         )
         
-        error_count = result.get("error_count", data.get("error_count", -1))
+        # 修复：适配 violation_count 字段
+        # DRCResult 返回 "violation_count"，而非 "error_count"
+        error_count = (
+            result.get("violation_count",
+                result.get("error_count",
+                    data.get("violation_count",
+                        data.get("error_count", -1))))
+        )
         
         if drc_clean or error_count == 0:
             return VerificationResult(

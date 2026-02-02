@@ -25,6 +25,7 @@ from mcp_server.handlers.error_handler import ErrorHandler, LayoutError
 from mcp_server.tools.device_tools import DeviceToolExecutor
 from mcp_server.tools.routing_tools import RoutingToolExecutor
 from mcp_server.tools.placement_tools import PlacementToolExecutor
+from mcp_server.tools.verification_tools import VerificationToolExecutor
 from mcp_server.schemas.device_schemas import (
     NMOS_SCHEMA, PMOS_SCHEMA, VIA_STACK_SCHEMA, MIMCAP_SCHEMA, RESISTOR_SCHEMA
 )
@@ -33,7 +34,8 @@ from mcp_server.schemas.routing_schemas import (
 )
 from mcp_server.schemas.common_schemas import (
     PLACE_COMPONENT_SCHEMA, ALIGN_TO_PORT_SCHEMA, MOVE_COMPONENT_SCHEMA,
-    INTERDIGITIZE_SCHEMA
+    INTERDIGITIZE_SCHEMA,
+    RUN_DRC_SCHEMA, RUN_LVS_SCHEMA, EXTRACT_NETLIST_SCHEMA
 )
 
 
@@ -99,6 +101,7 @@ class MCPServer:
         self._device_executor: Optional[DeviceToolExecutor] = None
         self._routing_executor: Optional[RoutingToolExecutor] = None
         self._placement_executor: Optional[PlacementToolExecutor] = None
+        self._verification_executor: Optional[VerificationToolExecutor] = None
         
         # 初始化状态
         self._initialized = False
@@ -132,6 +135,7 @@ class MCPServer:
             self._device_executor = DeviceToolExecutor(context)
             self._routing_executor = RoutingToolExecutor(context)
             self._placement_executor = PlacementToolExecutor(context)
+            self._verification_executor = VerificationToolExecutor(context)
             
             self._initialized = True
             
@@ -410,6 +414,31 @@ class MCPServer:
             input_schema=INTERDIGITIZE_SCHEMA,
             handler=self._tool_interdigitize,
             category="placement"
+        ))
+        
+        # ========== 验证工具 ==========
+        self.register_tool(ToolDefinition(
+            name="run_drc",
+            description="执行DRC设计规则检查，返回违规信息和修复建议",
+            input_schema=RUN_DRC_SCHEMA,
+            handler=self._tool_run_drc,
+            category="verification"
+        ))
+        
+        self.register_tool(ToolDefinition(
+            name="extract_netlist",
+            description="提取版图网表，支持SPICE和Spectre格式",
+            input_schema=EXTRACT_NETLIST_SCHEMA,
+            handler=self._tool_extract_netlist,
+            category="verification"
+        ))
+        
+        self.register_tool(ToolDefinition(
+            name="run_lvs",
+            description="执行LVS版图与原理图对比检查",
+            input_schema=RUN_LVS_SCHEMA,
+            handler=self._tool_run_lvs,
+            category="verification"
         ))
     
     # 工具处理函数
@@ -738,6 +767,41 @@ class MCPServer:
         
         try:
             result = self._placement_executor.interdigitize(**params)
+            return ToolResult(success=True, data=result)
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+    
+    # ========== 验证工具处理函数 ==========
+    
+    def _tool_run_drc(self, params: Dict[str, Any]) -> ToolResult:
+        """执行 DRC 检查"""
+        if not self._verification_executor:
+            return ToolResult(success=False, error="服务器未初始化，请先调用initialize")
+        
+        try:
+            result = self._verification_executor.run_drc(**params)
+            return ToolResult(success=True, data=result)
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+    
+    def _tool_extract_netlist(self, params: Dict[str, Any]) -> ToolResult:
+        """提取网表"""
+        if not self._verification_executor:
+            return ToolResult(success=False, error="服务器未初始化，请先调用initialize")
+        
+        try:
+            result = self._verification_executor.extract_netlist(**params)
+            return ToolResult(success=True, data=result)
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+    
+    def _tool_run_lvs(self, params: Dict[str, Any]) -> ToolResult:
+        """执行 LVS 检查"""
+        if not self._verification_executor:
+            return ToolResult(success=False, error="服务器未初始化，请先调用initialize")
+        
+        try:
+            result = self._verification_executor.run_lvs(**params)
             return ToolResult(success=True, data=result)
         except Exception as e:
             return ToolResult(success=False, error=str(e))

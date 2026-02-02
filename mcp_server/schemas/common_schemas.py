@@ -142,6 +142,11 @@ RUN_DRC_SCHEMA: Dict[str, Any] = {
         "output_dir": {
             "type": "string",
             "description": "输出目录"
+        },
+        "include_suggestions": {
+            "type": "boolean",
+            "description": "是否生成修复建议",
+            "default": True
         }
     }
 }
