@@ -739,6 +739,294 @@ def _register_export_tools(agent: Agent[LayoutAgentDeps, str]) -> None:
         return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+# ============== 步骤执行 Prompt ==============
+
+STEP_EXECUTION_PROMPT = """你是模拟版图设计的执行代理 (Act Agent)。
+
+## 你的任务
+
+根据给定的**任务目标 (objective)**，自主选择最合适的工具并执行操作。
+你不需要遵循预设的工具调用，而是根据目标描述**独立判断**应该使用哪个工具以及什么参数。
+
+## 可用工具分类
+
+### 器件创建 (device-creation)
+- create_nmos: 创建 NMOS 晶体管 (width, length, fingers, multiplier, with_dummy, with_tie, name)
+- create_pmos: 创建 PMOS 晶体管 (同上)
+- create_mimcap: 创建 MIM 电容 (width, length, name)
+- create_resistor: 创建电阻 (width, length, num_series, name)
+- create_via_stack: 创建层间 Via (from_layer, to_layer, size, name)
+
+### 布局放置 (placement-layout)
+- place_component: 放置组件到绝对位置 (component_name, x, y, rotation)
+- move_component: 移动组件相对位移 (component_name, dx, dy)
+- align_to_port: 对齐到端口 (component_name, target_port, alignment, offset_x, offset_y)
+- interdigitize: 互指式放置 (comp_a, comp_b, num_cols, layout_style)
+
+### 路由连接 (routing-connection)
+- smart_route: 智能路由 (source_port, dest_port, layer)
+- c_route: C型路由 (source_port, dest_port, extension, layer)
+- l_route: L型路由 (source_port, dest_port, layer)
+- straight_route: 直线路由 (source_port, dest_port, layer)
+
+### 验证 (verification-drc)
+- run_drc: 执行 DRC 检查
+- extract_netlist: 提取网表
+
+### 导出查询 (export-query)
+- export_gds: 导出 GDS 文件 (filename)
+- list_components: 列出所有组件 (device_type)
+- get_component_info: 获取组件详情 (component_name)
+
+## 执行原则
+
+1. **仔细阅读 objective**：理解真正需要完成的任务
+2. **利用 context_hints**：从中提取具体的参数值
+3. **选择最合适的工具**：根据任务类型选择
+4. **构造正确的参数**：从 objective 和 context_hints 推断参数
+5. **只调用一次工具**：完成任务后立即返回结果
+
+## 响应要求
+
+1. 分析任务目标
+2. 选择合适的工具
+3. 调用工具执行
+4. 返回执行结果
+"""
+
+
+# ============== 步骤执行依赖 ==============
+
+@dataclass
+class StepExecutionDeps(LayoutAgentDeps):
+    """步骤执行的依赖项，继承自 LayoutAgentDeps"""
+    step_info: Dict[str, Any] = field(default_factory=dict)
+    completed_step_results: List[Dict[str, Any]] = field(default_factory=list)
+
+
+# ============== 步骤执行 Agent 工厂 ==============
+
+def create_step_execution_agent(
+    model_name: str = "deepseek-chat",
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None
+) -> Agent[StepExecutionDeps, str]:
+    """创建步骤执行 Agent
+    
+    复用 pydantic_agent 的工具注册，但使用专门的执行 prompt。
+    """
+    if api_key is None:
+        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    if base_url is None:
+        base_url = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    
+    provider = OpenAIProvider(base_url=base_url, api_key=api_key)
+    model = OpenAIChatModel(model_name, provider=provider)
+    
+    # 创建执行 Agent
+    step_agent: Agent[StepExecutionDeps, str] = Agent(
+        model,
+        deps_type=StepExecutionDeps,
+        output_type=str,
+        system_prompt=STEP_EXECUTION_PROMPT,
+        retries=2
+    )
+    
+    # 注入宪法和步骤上下文
+    @step_agent.instructions
+    async def inject_step_context(ctx: RunContext[StepExecutionDeps]) -> str:
+        """注入步骤执行上下文"""
+        parts = []
+        
+        # 宪法注入
+        if ctx.deps.constitution:
+            parts.append("## Agent Constitution (必须遵守)")
+            parts.append(ctx.deps.constitution[:2000])  # 限制长度
+        
+        # 当前步骤信息
+        if ctx.deps.step_info:
+            parts.append("\n## 当前步骤信息")
+            parts.append(f"步骤 ID: {ctx.deps.step_info.get('step_id')}")
+            parts.append(f"类别: {ctx.deps.step_info.get('category')}")
+        
+        return "\n".join(parts)
+    
+    # 注册所有工具（复用现有的工具注册逻辑）
+    _register_device_tools(step_agent)
+    _register_routing_tools(step_agent)
+    _register_placement_tools(step_agent)
+    _register_circuit_tools(step_agent)
+    _register_verification_tools(step_agent)
+    _register_query_tools(step_agent)
+    _register_export_tools(step_agent)
+    
+    return step_agent
+
+
+# ============== 步骤执行函数 ==============
+
+async def execute_step_with_agent(
+    step: Dict[str, Any],
+    mcp_server: "MCPServer",
+    completed_results: List[Dict] = None,
+    model_name: str = "deepseek-chat",
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    使用 Agent 执行单个步骤
+    
+    根据步骤的 objective 和 context_hints，让 Agent 自主选择工具执行。
+    
+    Args:
+        step: 步骤定义，包含 objective, context_hints 等
+        mcp_server: MCP Server 实例
+        completed_results: 已完成步骤的结果列表
+        model_name: 执行 Agent 使用的模型
+        api_key: API 密钥
+        base_url: API 基础 URL
+    
+    Returns:
+        执行结果字典
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # 获取或构建 objective
+    objective = step.get('objective') or step.get('description', '')
+    if not objective and step.get('tool'):
+        # 兼容旧格式：从 tool + parameters 构建 objective
+        objective = f"执行 {step['tool']} 操作: {step.get('description', '')}"
+    
+    logger.info(f"Executing step {step.get('step_id')} with Agent")
+    logger.debug(f"Objective: {objective[:100]}...")
+    
+    # 创建执行 Agent
+    step_agent = create_step_execution_agent(
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url
+    )
+    
+    # 获取布局上下文
+    layout_ctx = mcp_server.state_handler.get_context()
+    
+    # 创建依赖
+    deps = StepExecutionDeps(
+        mcp_server=mcp_server,
+        circuit_builder=CircuitBuilder(layout_ctx) if layout_ctx else None,
+        verification_engine=VerificationEngine(layout_ctx) if layout_ctx else None,
+        step_info=step,
+        completed_step_results=completed_results or []
+    )
+    
+    # 构建执行 prompt
+    execution_prompt = _build_step_execution_prompt(step, completed_results)
+    
+    try:
+        # 执行
+        result = await step_agent.run(execution_prompt, deps=deps)
+        
+        # 解析结果
+        return _parse_step_execution_result(result.output, step)
+        
+    except Exception as e:
+        logger.error(f"Step execution failed: {e}")
+        return {
+            "success": False,
+            "error": {"type": "execution_error", "message": str(e)}
+        }
+
+
+def _build_step_execution_prompt(
+    step: Dict[str, Any],
+    completed_results: List[Dict] = None
+) -> str:
+    """构建步骤执行 prompt"""
+    parts = [
+        "## 当前任务",
+        f"**步骤 {step.get('step_id')}**: {step.get('description', '')}",
+        f"**类别**: {step.get('category', '')}",
+        "",
+        "### 任务目标 (objective)",
+        step.get('objective') or step.get('description', ''),
+        "",
+        "### 期望结果 (expected_behavior)",
+        json.dumps(step.get('expected_behavior', step.get('expected_output', {})), 
+                   ensure_ascii=False, indent=2),
+        "",
+        "### 上下文提示 (context_hints)",
+        json.dumps(step.get('context_hints', step.get('parameters', {})), 
+                   ensure_ascii=False, indent=2),
+    ]
+    
+    # 添加依赖步骤的结果
+    depends_on = step.get('depends_on', [])
+    if depends_on and completed_results:
+        parts.extend(["", "### 依赖步骤的执行结果"])
+        for dep_id in depends_on:
+            if 0 < dep_id <= len(completed_results):
+                dep_result = completed_results[dep_id - 1]
+                result_str = json.dumps(dep_result, ensure_ascii=False)
+                parts.append(f"**步骤 {dep_id}**: {result_str[:500]}")
+    
+    # 路由特殊提示
+    if step.get('routing_justification'):
+        parts.extend([
+            "",
+            "### 路由层选择说明",
+            step.get('routing_justification')
+        ])
+    
+    parts.extend([
+        "",
+        "---",
+        "请根据上述任务目标，选择合适的工具并执行。完成后返回执行结果。"
+    ])
+    
+    return "\n".join(parts)
+
+
+def _parse_step_execution_result(
+    agent_output: str,
+    step: Dict[str, Any]
+) -> Dict[str, Any]:
+    """解析 Agent 执行结果"""
+    import re
+    
+    # 尝试从输出中提取 JSON 结果
+    json_match = re.search(r'\{[\s\S]*?\}', agent_output)
+    if json_match:
+        try:
+            result_data = json.loads(json_match.group())
+            if 'success' in result_data:
+                return result_data
+        except json.JSONDecodeError:
+            pass
+    
+    # 基于关键词判断成功/失败
+    output_lower = agent_output.lower()
+    success_indicators = ['成功', 'success', 'completed', '完成', 'created', '创建']
+    failure_indicators = ['失败', 'error', 'failed', '错误', 'exception']
+    
+    has_success = any(ind in output_lower for ind in success_indicators)
+    has_failure = any(ind in output_lower for ind in failure_indicators)
+    
+    if has_failure and not has_success:
+        return {
+            "success": False,
+            "message": agent_output[:500],
+            "error": {"type": "execution_failed", "message": "Agent reported failure"}
+        }
+    
+    return {
+        "success": True,
+        "message": agent_output[:500],
+        "data": {"agent_output": agent_output}
+    }
+
+
 # ============== 运行入口 ==============
 
 async def run_layout_agent(

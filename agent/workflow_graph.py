@@ -60,7 +60,8 @@ class LayoutAgentDeps:
     reasoning_agent: Optional["ReasoningAgent"] = None
     constitution: str = ""
     temp_modified_params: Optional[dict] = None
-    init_status: Dict[str, Any] = field(default_factory=dict)  # New: Initialization status / 新增: 初始化状态
+    init_status: Dict[str, Any] = field(default_factory=dict)
+    completed_step_results: List[Dict] = field(default_factory=list)  # 新增：已完成步骤的结果
     
     def __post_init__(self):
         """Auto-load constitution if not provided
@@ -253,8 +254,14 @@ if PYDANTIC_GRAPH_AVAILABLE:
     @dataclass
     class ExecuteStepNode(BaseNode[LayoutWorkflowState, LayoutAgentDeps, str]):
         """
-        Execute the current step
-        执行当前步骤
+        Execute the current step using StepExecutor
+        使用 StepExecutor 执行当前步骤
+        
+        支持两种执行模式：
+        1. 目标导向模式：step 有 objective，通过 StepExecutor 调用 Agent 自主选择工具
+        2. 直接调用模式：step 有 tool，直接调用工具
+        
+        执行模式由 StepExecutor 自动判断。
         """
         
         async def run(
@@ -263,28 +270,57 @@ if PYDANTIC_GRAPH_AVAILABLE:
         ) -> "VerifyStepNode | FailureAnalysisNode":
             step = ctx.state.steps[ctx.state.current_step_index]
             
-            logger.debug(f"Calling tool: {step['tool']}")
-            logger.debug(f"  Parameters: {step['parameters']}")
+            step_id = step.get('step_id', ctx.state.current_step_index + 1)
+            description = step.get('description', 'Unknown step')
+            objective = step.get('objective', '')
             
-            # Use modified params if available (from failure recovery)
-            # 如果有修改后的参数则使用（来自失败恢复）
-            params = ctx.deps.temp_modified_params or step['parameters']
-            ctx.deps.temp_modified_params = None  # Clear after use / 使用后清除
+            logger.info(f"Executing step {step_id}: {description}")
+            if objective:
+                logger.debug(f"Objective: {objective[:100]}...")
+            
+            # 将已完成步骤结果传递给执行器
+            ctx.deps.step_executor.context.completed_step_results = ctx.deps.completed_step_results
+            
+            # 使用 modified params 如果有的话（来自失败恢复）
+            override_params = ctx.deps.temp_modified_params
+            ctx.deps.temp_modified_params = None
             
             try:
-                result = await ctx.deps.call_tool(step['tool'], params)
-                logger.debug(f"  Result: {result}")
+                # 调用 StepExecutor（自动判断执行模式）
+                from ..state.models import StepDefinition, VerificationConfig
                 
-                if result.get('success', False):
-                    return VerifyStepNode(tool_result=result)
+                # 转换 step dict 为 StepDefinition
+                step_copy = step.copy()
+                if isinstance(step_copy.get('verification'), dict):
+                    step_copy['verification'] = VerificationConfig(**step_copy['verification'])
+                step_def = StepDefinition(**step_copy)
+                
+                result = await ctx.deps.step_executor.execute_step(
+                    step_def,
+                    ctx.state.completed,
+                    override_params
+                )
+                
+                # 转换结果格式
+                result_dict = result.to_dict() if hasattr(result, 'to_dict') else {
+                    'success': result.success,
+                    'data': result.data,
+                    'message': result.message,
+                    'error': result.error
+                }
+                
+                if result.success:
+                    # 记录成功结果
+                    ctx.deps.completed_step_results.append(result_dict)
+                    return VerifyStepNode(tool_result=result_dict)
                 else:
-                    error_msg = result.get('error', {})
+                    error_msg = result.error
                     if isinstance(error_msg, dict):
                         error_msg = error_msg.get('message', 'Unknown error')
                     return FailureAnalysisNode(error=str(error_msg))
                     
             except Exception as e:
-                logger.error(f"Tool call failed: {e}")
+                logger.error(f"Step execution failed: {e}")
                 return FailureAnalysisNode(error=str(e))
     
     
@@ -369,7 +405,13 @@ if PYDANTIC_GRAPH_AVAILABLE:
                     if analysis.recoverable:
                         logger.info(f"Analysis: recoverable - {analysis.analysis[:100]}...")
                         if analysis.modified_step:
-                            ctx.deps.temp_modified_params = analysis.modified_step.get('parameters')
+                            params = analysis.modified_step.get('parameters')
+                            if params is None and 'component_name' in analysis.modified_step:
+                                params = analysis.modified_step
+                                logger.warning("Modified step missing 'parameters' field, using directly")
+                            if params:
+                                logger.info(f"Using modified parameters: {params}")
+                                ctx.deps.temp_modified_params = params
                         return ExecuteStepNode()
                     else:
                         logger.error(f"Analysis: NOT recoverable - {analysis.recommendation}")

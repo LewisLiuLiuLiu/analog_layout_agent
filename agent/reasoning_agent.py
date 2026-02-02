@@ -76,18 +76,33 @@ def load_constitution() -> str:
 
 class StepDefinitionOutput(BaseModel):
     """Single step output format from Reasoning Agent
-    推理代理的单步输出格式"""
+    推理代理的单步输出格式
+    
+    重构说明：
+    - 移除 tool 和 parameters 字段，改用目标导向描述
+    - Reasoning Agent 只描述"做什么"，不描述"用什么工具"
+    - Act Agent（pydantic_agent）根据 objective 自主选择工具
+    """
     step_id: int
-    category: str  # device-creation, placement-layout, routing-connection, verification-drc, export-query / 设备创建、布局置放、路由连接、验证DRC、导出查询
-    description: str
-    skill: str = ""
-    tool: str
-    parameters: dict = Field(default_factory=dict)
-    expected_output: dict = Field(default_factory=dict)
+    category: str  # device-creation, placement-layout, routing-connection, verification-drc, export-query
+    description: str  # 人类可读的步骤描述
+    
+    # 目标导向字段（新架构）
+    objective: str = ""  # 具体任务目标，描述需要完成什么（必填）
+    expected_behavior: dict = Field(default_factory=dict)  # 期望的执行结果
+    context_hints: dict = Field(default_factory=dict)  # 上下文提示，帮助 act agent 理解
+    
+    # 验证和依赖
     verification: dict = Field(default_factory=dict)
     depends_on: list[int] = Field(default_factory=list)
-    routing_justification: Optional[str] = None
+    routing_justification: Optional[str] = None  # 仅 routing 步骤需要
     max_retries: int = 3
+    
+    # 兼容性字段（过渡期保留，新生成的计划不再填充）
+    skill: str = ""
+    tool: str = ""  # 已废弃
+    parameters: dict = Field(default_factory=dict)  # 已废弃
+    expected_output: dict = Field(default_factory=dict)  # 映射到 expected_behavior
 
 
 class WorkflowPlanOutput(BaseModel):
@@ -126,6 +141,15 @@ PLANNING_PROMPT = """# Analog Layout Reasoning Agent - Workflow Planner
 You are an expert analog circuit layout planner. Your task is to analyze user requirements
 and decompose them into a sequence of minimal executable steps.
 
+## 目标导向输出（CRITICAL）
+
+你的输出**不再指定具体的工具名称和参数**。相反，你需要：
+1. 描述每个步骤的**任务目标 (objective)**
+2. 说明**期望的执行结果 (expected_behavior)**
+3. 提供**上下文提示 (context_hints)** 帮助执行代理理解任务
+
+执行代理(Act Agent)会根据你的描述**自主选择**合适的工具。
+
 ## Output Format Requirements
 
 You must output a strict JSON format with the following structure:
@@ -136,12 +160,12 @@ You must output a strict JSON format with the following structure:
 Each step must contain:
 - step_id: Sequential number starting from 1
 - category: Step type (device-creation, placement-layout, routing-connection, verification-drc, export-query)
-- description: Human-readable step description
-- tool: Tool name to use
-- parameters: Tool parameters as object (e.g., {"width": 1.0, "length": 0.15})
-- expected_output: Expected output as object (e.g., {"component_name": "nmos_1", "success": true}), NOT a string
-- verification: Verification config with "type" and "conditions" (conditions is a list of strings, e.g., {"type": "component_exists", "conditions": []})
-- depends_on: List of step_ids this step depends on (e.g., [1, 2])
+- description: Human-readable step description (简短)
+- objective: **Clear task objective describing WHAT to achieve** (详细，必填)
+- expected_behavior: Expected outcome as object
+- context_hints: Additional context to help execution agent
+- verification: Verification config with "type" and "conditions"
+- depends_on: List of step_ids this step depends on
 - routing_justification: (Only for routing steps) Explain metal layer choice
 
 ## JSON Format Example
@@ -154,68 +178,166 @@ Each step must contain:
     {
       "step_id": 1,
       "category": "device-creation",
-      "description": "Create PMOS current mirror",
-      "tool": "create_pmos",
-      "parameters": {"width": 1.0, "length": 0.15, "fingers": 2},
-      "expected_output": {"component_name": "pmos_1", "device_type": "pmos"},
+      "description": "创建 PMOS 电流镜参考管",
+      "objective": "创建一个 PMOS 晶体管作为电流镜的参考管，沟道宽度 1.0um，沟道长度 0.15um，使用 2 个 fingers 以提高匹配性，添加 dummy 结构保护边缘",
+      "expected_behavior": {
+        "result_type": "pmos_transistor",
+        "component_created": true,
+        "has_standard_ports": true,
+        "ports_include": ["gate", "drain", "source", "bulk"]
+      },
+      "context_hints": {
+        "device_type": "pmos",
+        "width_um": 1.0,
+        "length_um": 0.15,
+        "fingers": 2,
+        "purpose": "current_mirror_reference",
+        "matching_requirement": "high"
+      },
       "verification": {"type": "component_exists", "conditions": []},
       "depends_on": [],
+      "max_retries": 3
+    },
+    {
+      "step_id": 2,
+      "category": "placement-layout",
+      "description": "将 PMOS 放置在原点",
+      "objective": "将步骤1创建的 PMOS 晶体管放置到版图的原点位置 (0, 0)，作为电流镜布局的起始参考点",
+      "expected_behavior": {
+        "placement_completed": true,
+        "position": {"x": 0, "y": 0}
+      },
+      "context_hints": {
+        "target_component": "step_1_output",
+        "position_x": 0,
+        "position_y": 0,
+        "rotation": 0
+      },
+      "verification": {"type": "placement_check", "conditions": []},
+      "depends_on": [1],
+      "max_retries": 3
+    },
+    {
+      "step_id": 3,
+      "category": "routing-connection",
+      "description": "连接电流镜栅极",
+      "objective": "将两个 PMOS 晶体管的栅极端口连接在一起，形成电流镜的栅极共接结构，使用 met2 层进行水平方向的布线",
+      "expected_behavior": {
+        "route_completed": true,
+        "connection_type": "gate_tie",
+        "layer_used": "met2"
+      },
+      "context_hints": {
+        "source_component": "pmos_1",
+        "source_port": "gate_W",
+        "dest_component": "pmos_2",
+        "dest_port": "gate_W",
+        "preferred_layer": "met2",
+        "routing_direction": "horizontal"
+      },
+      "verification": {"type": "routing_check", "conditions": []},
+      "depends_on": [1, 2],
+      "routing_justification": "使用 met2 层进行水平布线，避免与 met1 层的器件内部连线冲突",
       "max_retries": 3
     }
   ]
 }
 ```
 
-## Available Tools by Category
+## 如何编写高质量的 objective
 
-### device-creation
-- create_nmos: Create NMOS transistor
-- create_pmos: Create PMOS transistor
-- create_mimcap: Create MIM capacitor
-- create_resistor: Create resistor
-- create_via_stack: Create via stack
+### 器件创建 (device-creation)
+好的 objective 示例：
+"创建一个 NMOS 晶体管用于差分对输入级，沟道宽度 2.0um，沟道长度 0.5um（长沟道以改善匹配性），使用 4 个 fingers，添加 dummy 结构和衬底连接"
 
-### placement-layout
-- place_component: Place component relative to another
-- align_to_port: Align component to a port
-- move_component: Move component to position
-- interdigitize: Interdigitate multiple components
+### 布局放置 (placement-layout)
+好的 objective 示例：
+"将差分对的两个 NMOS 晶体管进行互指式放置（interdigitated layout），采用 ABBA 对称结构，4 列排列，以实现最佳匹配性"
 
-### routing-connection
-- smart_route: Smart routing between ports
-- c_route: C-shaped route
-- l_route: L-shaped route
-- straight_route: Straight route
+### 路由连接 (routing-connection)
+好的 objective 示例：
+"连接 NMOS 输入管的漏极到 PMOS 负载管的漏极，形成输出节点。使用 met2 层进行垂直方向布线，避免与 met1 层的栅极连线交叉"
 
-### verification-drc
-- run_drc: Run DRC check
+### 验证 (verification-drc)
+好的 objective 示例：
+"执行设计规则检查(DRC)，验证当前版图是否存在间距违规、最小宽度违规或包围违规"
 
-### export-query
-- export_gds: Export to GDS file
-- list_components: List all components
-- get_component_info: Get component details
+### 导出 (export-query)
+好的 objective 示例：
+"将完成的版图导出为 GDS 格式文件，文件名使用设计名称"
 
 ## Planning Principles (MANDATORY)
 
-1. **Minimal Action**: Each step does ONE thing only
-2. **Clear Dependencies**: Explicitly mark step dependencies in depends_on
-3. **Verifiable**: Each step must have clear verification conditions
-4. **Correct Order**: Device creation -> Placement -> Routing -> DRC -> Export
-5. **DRC Checkpoints**: Add DRC verification after placement and routing steps
-6. **Metal Layer Planning**: For routing steps, MUST specify layer parameter to prevent shorts
+1. **Objective-Oriented**: 描述"做什么"，不描述"用什么工具"
+2. **Context Rich**: context_hints 提供足够的数值和上下文信息
+3. **Clear Intent**: objective 必须明确无歧义
+4. **Minimal Action**: 每个步骤只做一件事
+5. **Clear Dependencies**: 在 depends_on 中明确标注依赖
+6. **Verifiable**: 每个步骤必须有验证条件
+7. **Correct Order**: 器件创建 → 放置 → 路由 → DRC → 导出
 
-## Metal Layer Rules (CRITICAL - Prevent Short Circuits)
+## context_hints 规范
 
-1. Horizontal signals: met1
-2. Vertical signals: met2
-3. Crossing signals: MUST use different layers
-4. Power/Ground: met3 or higher
-5. EVERY routing step MUST have a 'layer' parameter
+### 器件创建
+```json
+{
+  "device_type": "nmos|pmos",
+  "width_um": 1.0,
+  "length_um": 0.15,
+  "fingers": 2,
+  "multiplier": 1,
+  "with_dummy": true,
+  "with_tie": true,
+  "purpose": "current_mirror|diff_pair|load|bias"
+}
+```
+
+### 布局放置
+```json
+{
+  "target_component": "component_name_or_step_reference",
+  "position_x": 0.0,
+  "position_y": 0.0,
+  "rotation": 0,
+  "align_to": "port_reference",
+  "layout_style": "interdigitated|common_centroid"
+}
+```
+
+### 路由连接
+```json
+{
+  "source_component": "comp1",
+  "source_port": "drain_E",
+  "dest_component": "comp2",
+  "dest_port": "drain_E",
+  "preferred_layer": "met1|met2|met3",
+  "routing_direction": "horizontal|vertical|auto"
+}
+```
+
+## Metal Layer Rules
+
+在 routing 步骤的 context_hints 中指定 preferred_layer：
+1. 水平信号: met1
+2. 垂直信号: met2
+3. 交叉信号: 必须使用不同层
+4. 电源/地: met3 或更高层
 """
 
 FAILURE_ANALYSIS_PROMPT = """# Analog Layout Reasoning Agent - Failure Analyzer
 
 A step execution has failed. Analyze the root cause and provide a fix.
+
+## Tool Parameter Reference
+
+### move_component
+CORRECT: {"component_name": "xxx", "dx": 5.0, "dy": 0.0}
+WRONG: {"component_name": "xxx", "x": 5.0, "y": 0.0}  <- x/y are NOT valid
+WRONG: {"component_name": "xxx", "position": [5, 0]} <- position is NOT valid
+
+### place_component
+CORRECT: {"component_name": "xxx", "x": 0.0, "y": 10.0}
 
 ## Your Task
 
@@ -226,15 +348,34 @@ A step execution has failed. Analyze the root cause and provide a fix.
 
 ## Output Format
 
+Output MUST be valid JSON with this EXACT structure:
+
 For recoverable errors:
-- recoverable: true
-- analysis: Explanation of failure cause
-- modified_step: Modified step definition with fixed parameters
+``json
+{
+  "recoverable": true,
+  "analysis": "Explanation of failure cause",
+  "modified_step": {
+    "parameters": {
+      "component_name": "pmos_1",
+      "dx": 0,
+      "dy": 10
+    }
+  }
+}
+
+```
 
 For non-recoverable errors:
-- recoverable: false
-- analysis: Explanation of failure cause
-- recommendation: Suggested manual action
+```
+{
+  "recoverable": false,
+  "analysis": "Explanation of failure cause",
+  "recommendation": "Suggested manual action"
+}
+
+
+```
 """
 
 
@@ -509,7 +650,8 @@ Please analyze the failure and provide a fix if possible.
         1. At least one step
         2. step_id is sequential from 1
         3. depends_on references are valid
-        4. routing steps have layer parameter
+        4. Each step has objective (required for new architecture)
+        5. Routing steps have layer info in context_hints
         """
         if len(plan.steps) == 0:
             raise ValueError("Workflow must have at least one step")
@@ -532,13 +674,37 @@ Please analyze the failure and provide a fix if possible.
                         f"Step {step.step_id} has invalid dependency: {dep}"
                     )
         
-        # Check routing steps have layer
+        # Check each step has valid task definition
+        for step in plan.steps:
+            has_objective = bool(step.objective) if hasattr(step, 'objective') else False
+            has_tool = bool(step.tool)
+            
+            # 新架构要求必须有 objective
+            if not has_objective and not has_tool:
+                raise ValueError(
+                    f"Step {step.step_id} must have 'objective' defined (new architecture) "
+                    f"or 'tool' for backward compatibility"
+                )
+            
+            # 如果有 tool 但没有 objective，发出警告（旧格式）
+            if has_tool and not has_objective:
+                logger.warning(
+                    f"Step {step.step_id} uses deprecated 'tool' field. "
+                    f"Please migrate to 'objective' based format."
+                )
+        
+        # Check routing steps have layer info
         for step in plan.steps:
             if step.category == "routing-connection":
-                if "layer" not in step.parameters:
-                    raise ValueError(
-                        f"Routing step {step.step_id} must specify 'layer' parameter"
+                context_hints = getattr(step, 'context_hints', {}) or {}
+                has_layer_hint = 'preferred_layer' in context_hints or 'layer' in context_hints
+                has_layer_param = "layer" in step.parameters if step.parameters else False
+                
+                if not has_layer_hint and not has_layer_param:
+                    logger.warning(
+                        f"Routing step {step.step_id} should specify 'preferred_layer' in context_hints"
                     )
+                
                 if not step.routing_justification:
                     logger.warning(
                         f"Routing step {step.step_id} missing routing_justification"

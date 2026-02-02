@@ -28,6 +28,11 @@ class ExecutionContext:
     design_dir: Any  # Path / 路径
     constitution: str = ""
     temp_modified_params: Optional[dict] = None
+    completed_step_results: list = None  # 新增：已完成步骤的结果
+    
+    def __post_init__(self):
+        if self.completed_step_results is None:
+            self.completed_step_results = []
 
 
 class StepExecutor:
@@ -35,10 +40,9 @@ class StepExecutor:
     Step executor - executes individual workflow steps.
     步骤执行器 - 执行单个工作流步骤。
     
-    Responsibilities / 职责:
-    1. Check step dependencies / 检查步骤依赖
-    2. Execute tool calls / 执行工具调用
-    3. Verify execution results / 验证执行结果
+    支持两种执行模式：
+    1. 目标导向模式（新）：根据 objective 调用 Agent 自主选择工具
+    2. 直接调用模式（旧）：直接使用 step.tool 调用
     """
     
     def __init__(self, context: ExecutionContext):
@@ -62,23 +66,13 @@ class StepExecutor:
         Execute a single step.
         执行单个步骤。
         
-        Process / 处理流程:
-        1. Check if dependencies are satisfied / 检查依赖是否满足
-        2. Execute the tool call / 执行工具调用
-        3. Verify execution result / 验证执行结果
-        4. Return result / 返回结果
-        
-        Args:
-            step: Step definition to execute / 要执行的步骤定义
-            completed: Current completion status array / 当前完成状态数组
-            override_params: Optional parameter override (from failure recovery) / 可选的参数覆盖（来自失败恢复）
-            
-        Returns:
-            StepResult: Execution result / 执行结果
+        自动判断执行模式：
+        - 如果 step 有 objective 且无 tool → 目标导向模式
+        - 如果 step 有 tool → 直接调用模式
         """
         logger.info(f"Executing step {step.step_id}: {step.description}")
         
-        # 1. Check dependencies / 检查依赖
+        # 1. Check dependencies
         if not self._check_dependencies(step, completed):
             return StepResult(
                 success=False,
@@ -88,10 +82,110 @@ class StepExecutor:
                 }
             )
         
-        # 2. Prepare parameters / 准备参数
+        # 2. 判断执行模式
+        use_agent_mode = self._should_use_agent_mode(step)
+        
+        if use_agent_mode:
+            # 目标导向模式：调用 Agent 自主选择工具
+            return await self._execute_with_agent(step)
+        else:
+            # 直接调用模式：使用 step.tool
+            return await self._execute_direct(step, override_params)
+    
+    def _should_use_agent_mode(self, step: StepDefinition) -> bool:
+        """判断是否使用 Agent 模式执行"""
+        # 有 objective 且无 tool → 使用 Agent 模式
+        has_objective = bool(step.objective) if hasattr(step, 'objective') else False
+        has_tool = bool(step.tool)
+        
+        # 新架构优先
+        if has_objective and not has_tool:
+            return True
+        
+        # 兼容：如果同时有 objective 和 tool，优先使用 objective
+        if has_objective:
+            logger.info("Step has both objective and tool, using Agent mode")
+            return True
+        
+        return False
+    
+    async def _execute_with_agent(self, step: StepDefinition) -> StepResult:
+        """使用 Agent 执行步骤（目标导向模式）"""
+        from .pydantic_agent import execute_step_with_agent
+        
+        logger.info(f"Using Agent mode for step {step.step_id}")
+        objective = step.objective if hasattr(step, 'objective') else ''
+        logger.debug(f"Objective: {objective[:100] if objective else 'N/A'}...")
+        
+        try:
+            # 调用 pydantic_agent 的执行函数
+            result = await execute_step_with_agent(
+                step=step.model_dump(),
+                mcp_server=self.mcp_server,
+                completed_results=self.context.completed_step_results
+            )
+            
+            if result.get("success"):
+                # 记录成功结果
+                self.context.completed_step_results.append(result)
+                
+                # 验证结果
+                verification = await self._verify_step(step, result)
+                if verification.passed:
+                    return StepResult(
+                        success=True,
+                        data=result,
+                        message=f"Step {step.step_id} completed via Agent"
+                    )
+                else:
+                    return StepResult(
+                        success=False,
+                        data=result,
+                        error={"type": "verification_failed", "message": verification.message}
+                    )
+            else:
+                return StepResult(
+                    success=False,
+                    data=result,
+                    error=result.get("error", {"message": "Agent execution failed"})
+                )
+                
+        except Exception as e:
+            logger.error(f"Agent execution failed: {e}")
+            return StepResult(
+                success=False,
+                error={"type": "agent_error", "message": str(e)}
+            )
+    
+    async def _execute_direct(
+        self,
+        step: StepDefinition,
+        override_params: Optional[dict] = None
+    ) -> StepResult:
+        """直接调用工具执行（兼容旧模式）"""
+        logger.info(f"Using direct mode for step {step.step_id}")
+        
+        # Prepare parameters
         params = override_params if override_params else step.parameters.copy()
         
-        # 3. Execute tool / 执行工具
+        # 自动注入 expected_output.component_name 为 name 参数
+        # 修复旧格式 workflow_state.json 中缺少 name 参数的问题
+        # 当 device-creation 步骤定义了 expected_output.component_name 但 parameters 中没有 name 时，
+        # 自动将 component_name 注入为 name 参数，确保组件使用预期的名称创建
+        if step.category == "device-creation":
+            expected_name = step.expected_output.get("component_name")
+            
+            # 处理 override_params 可能包含 component_name 而非 name 的情况
+            # (Reasoning Agent 的 failure analysis 可能返回 component_name 作为 key)
+            if "component_name" in params and "name" not in params:
+                params["name"] = params.pop("component_name")
+                logger.info(f"Converted component_name to name: {params['name']}")
+            
+            if expected_name and "name" not in params:
+                params["name"] = expected_name
+                logger.info(f"Injected component name from expected_output: {expected_name}")
+        
+        # Execute tool
         try:
             tool_result = await self._call_tool(step.tool, params)
             logger.debug(f"Tool {step.tool} returned: {tool_result}")
@@ -99,24 +193,21 @@ class StepExecutor:
             logger.error(f"Tool execution failed: {e}")
             return StepResult(
                 success=False,
-                error={
-                    "type": "execution_error",
-                    "message": str(e)
-                }
+                error={"type": "execution_error", "message": str(e)}
             )
         
-        # 4. Check if tool call succeeded / 检查工具调用是否成功
+        # Check if tool call succeeded
         if not tool_result.get("success", False):
             return StepResult(
                 success=False,
                 data=tool_result,
-                error={
-                    "type": "tool_error",
-                    "message": tool_result.get("error", "Tool returned failure")
-                }
+                error={"type": "tool_error", "message": tool_result.get("error", "Tool returned failure")}
             )
         
-        # 5. Verify result / 验证结果
+        # 记录成功结果
+        self.context.completed_step_results.append(tool_result)
+        
+        # Verify result
         verification = await self._verify_step(step, tool_result)
         
         if verification.passed:
@@ -129,10 +220,7 @@ class StepExecutor:
             return StepResult(
                 success=False,
                 data=tool_result,
-                error={
-                    "type": "verification_failed",
-                    "message": verification.message
-                }
+                error={"type": "verification_failed", "message": verification.message}
             )
     
     def _check_dependencies(self, step: StepDefinition, completed: list[bool]) -> bool:
@@ -225,7 +313,15 @@ class StepExecutor:
             return VerificationResult(passed=True, message="No component name to verify")
         
         # Check in result / 在结果中检查
-        created_name = result.get("component_name") or result.get("name")
+        # MCP Server 返回的结构是 {"success": True, "data": {...}}
+        # 器件创建结果在 data 字段中，需要同时检查顶层和嵌套结构
+        data = result.get("data", {})
+        created_name = (
+            result.get("component_name") or 
+            result.get("name") or 
+            data.get("component_name") or 
+            data.get("name")
+        )
         if created_name == expected_name:
             return VerificationResult(
                 passed=True,
@@ -236,8 +332,9 @@ class StepExecutor:
         try:
             layout_ctx = self.mcp_server.state_handler.get_context()
             if layout_ctx:
-                components = layout_ctx.component_registry.list_components()
-                if expected_name in [c["name"] for c in components]:
+                # registry.list_all() 返回组件名称字符串列表
+                components = layout_ctx.registry.list_all()
+                if expected_name in components:
                     return VerificationResult(
                         passed=True,
                         message=f"Component {expected_name} found in registry"
@@ -259,8 +356,19 @@ class StepExecutor:
         Verify component placement
         验证组件布局
         """
+        # MCP Server 返回的结构是 {"success": True, "data": {...}}
+        # 需要同时检查顶层和嵌套结构
+        data = result.get("data", {})
+        
         # Check if placement succeeded / 检查布局是否成功
-        if result.get("placed") or result.get("success"):
+        placed = (
+            result.get("placed") or 
+            result.get("success") or
+            data.get("placed") or
+            data.get("success")
+        )
+        
+        if placed:
             return VerificationResult(
                 passed=True,
                 message="Placement completed"
@@ -279,7 +387,18 @@ class StepExecutor:
         Verify routing connection
         验证路由连接
         """
-        if result.get("routed") or result.get("success"):
+        # MCP Server 返回的结构是 {"success": True, "data": {...}}
+        # 需要同时检查顶层和嵌套结构
+        data = result.get("data", {})
+        
+        routed = (
+            result.get("routed") or 
+            result.get("success") or
+            data.get("routed") or
+            data.get("success")
+        )
+        
+        if routed:
             return VerificationResult(
                 passed=True,
                 message="Routing completed"
@@ -298,8 +417,18 @@ class StepExecutor:
         Verify DRC is clean
         验证 DRC 是否通过
         """
-        drc_clean = result.get("drc_clean") or result.get("clean", False)
-        error_count = result.get("error_count", -1)
+        # MCP Server 返回的结构是 {"success": True, "data": {...}}
+        # 需要同时检查顶层和嵌套结构
+        data = result.get("data", {})
+        
+        drc_clean = (
+            result.get("drc_clean") or 
+            result.get("clean", False) or
+            data.get("drc_clean") or
+            data.get("clean", False)
+        )
+        
+        error_count = result.get("error_count", data.get("error_count", -1))
         
         if drc_clean or error_count == 0:
             return VerificationResult(
@@ -331,8 +460,20 @@ class StepExecutor:
                     message=f"File created: {output_path}"
                 )
         
+        # MCP Server 返回的结构是 {"success": True, "data": {...}}
+        # 需要同时检查顶层和嵌套结构
+        data = result.get("data", {})
+        
         # Check result / 检查结果
-        if result.get("exported") or result.get("success"):
+        exported = (
+            result.get("exported") or 
+            result.get("success") or
+            data.get("exported") or
+            data.get("success") or
+            data.get("path")  # 导出工具返回 path 字段表示成功
+        )
+        
+        if exported:
             return VerificationResult(
                 passed=True,
                 message="Export completed"
@@ -361,7 +502,7 @@ class StepExecutor:
             }
         
         try:
-            components = layout_ctx.component_registry.list_components()
+            components = layout_ctx.registry.list_all()
         except Exception:
             components = []
         
